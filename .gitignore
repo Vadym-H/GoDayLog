@@ -1,0 +1,23 @@
+.idea/
+
+# Build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage outputs
+*.test
+*.out
+coverage.out
+
+# Logs
+*.log
+
+# Local environment overrides
+.env
+.env.*
+!.env.example
+

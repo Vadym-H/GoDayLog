@@ -1,0 +1,23 @@
+env: "local"
+
+telegram:
+  token: "" # set via .env
+
+database:
+  host: "localhost"
+  port: 5432
+  user: ""       # set via .env
+  password: ""   # set via .env
+  name: ""       # set via .env
+  sslmode: "disable"
+
+llm:
+  provider: "openai"
+  api_key: ""    # set via .env
+  model: "gpt-3.5-turbo"
+  timeout: 30s
+
+server:
+  address: ":8080"
+  timeout: 4s
+  idle_timeout: 120s
