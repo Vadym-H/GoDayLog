@@ -22,7 +22,7 @@ CREATE TABLE messages (
                           UNIQUE (user_id, telegram_message_id)
 );
 
--- activity_logs
+-- activity_logs 
 CREATE TABLE activity_logs (
                                id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
                                message_id       UUID        NOT NULL REFERENCES messages(id) ON DELETE CASCADE,

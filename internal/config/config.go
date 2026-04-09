@@ -2,7 +2,10 @@ package config
 
 import (
 	"log"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -22,12 +25,13 @@ type Telegram struct {
 }
 
 type Database struct {
-	Host     string `yaml:"host" env:"DB_HOST" env-default:"localhost"`
-	Port     int    `yaml:"port" env:"DB_PORT" env-default:"5432"`
-	User     string `yaml:"user" env:"DB_USER" env-required:"true"`
-	Password string `yaml:"password" env:"DB_PASSWORD" env-required:"true"`
-	Name     string `yaml:"name" env:"DB_NAME" env-required:"true"`
-	SSLMode  string `yaml:"sslmode" env:"DB_SSLMODE" env-default:"disable"`
+	Host        string `yaml:"host" env:"DB_HOST" env-default:"localhost"`
+	Port        int    `yaml:"port" env:"DB_PORT" env-default:"5432"`
+	User        string `yaml:"user" env:"DB_USER" env-required:"true"`
+	Password    string `yaml:"password" env:"DB_PASSWORD" env-required:"true"`
+	Name        string `yaml:"name" env:"DB_NAME" env-required:"true"`
+	SSLMode     string `yaml:"sslmode" env:"DB_SSLMODE" env-default:"disable"`
+	DatabaseUrl string
 }
 
 type LLMConfig struct {
@@ -63,5 +67,19 @@ func MustLoad() *Config {
 	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
 		log.Fatalf("Failed to load config: %s", err)
 	}
+
+	dbURL := url.URL{
+		Scheme: "postgres",
+		Host:   net.JoinHostPort(cfg.Database.Host, strconv.Itoa(cfg.Database.Port)),
+		Path:   cfg.Database.Name,
+		User:   url.UserPassword(cfg.Database.User, cfg.Database.Password),
+	}
+
+	query := dbURL.Query()
+	query.Set("sslmode", cfg.Database.SSLMode)
+	dbURL.RawQuery = query.Encode()
+
+	cfg.Database.DatabaseUrl = dbURL.String()
+
 	return &cfg
 }
