@@ -125,7 +125,7 @@ type Log struct {
 }
 
 // Printf prints formatted output from the migrator.
-func (l *Log) Printf(format string, v ...interface{}) {
+func (l *Log) Printf(format string, v ...any) {
 	fmt.Printf(format, v...)
 }
 

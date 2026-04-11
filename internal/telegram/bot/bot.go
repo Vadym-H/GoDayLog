@@ -18,6 +18,8 @@ type Bot struct {
 }
 
 func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error) {
+	const op = "telegram.bot.New"
+
 	userService := services.NewUserService(log, storage)
 
 	b := &Bot{
@@ -41,7 +43,10 @@ func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error)
 		},
 	})
 	if err != nil {
-		log.Error("failed to set bot commands", slog.String("error", err.Error()))
+		log.Error("failed to set bot commands",
+			slog.String("op", op),
+			slog.String("error", err.Error()),
+		)
 	}
 
 	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, b.tgHandlers.HandleStart)
@@ -54,13 +59,21 @@ func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error)
 }
 
 func (b *Bot) Start(ctx context.Context) {
-	b.log.Info("telegram bot started")
+	const op = "telegram.bot.Start"
+
+	b.log.Info("telegram bot started", slog.String("op", op))
 	b.tg.Start(ctx)
-	b.log.Info("telegram bot stopped")
+	b.log.Info("telegram bot stopped", slog.String("op", op))
 }
 
 func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
+	const op = "telegram.bot.handleMessage"
+
 	if update.Message == nil {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingContextInput(ctx, bot, update) {
 		return
 	}
 
@@ -73,6 +86,9 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 		Text:   "Use /start",
 	})
 	if err != nil {
-		b.log.Error("failed to send default response", slog.String("error", err.Error()))
+		b.log.Error("failed to send default response",
+			slog.String("op", op),
+			slog.String("error", err.Error()),
+		)
 	}
 }
