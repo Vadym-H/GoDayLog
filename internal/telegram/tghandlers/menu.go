@@ -8,31 +8,46 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// HandleMenu sends a simple inline keyboard menu for testing.
-// Command: /menu
+const (
+	callbackActionPrefix = "action:"
+	callbackLogActivity  = callbackActionPrefix + "log"
+	callbackTodayStats   = callbackActionPrefix + "stats"
+	callbackHelp         = callbackActionPrefix + "help"
+	callbackHome         = callbackActionPrefix + "home"
+	callbackCancelLog    = callbackActionPrefix + "cancel_log"
+)
+
+// HandleMenu sends the home screen with inline actions.
 func (tg *TgHandlers) HandleMenu(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
 	if update.Message == nil {
 		return
 	}
 
-	keyboard := [][]models.InlineKeyboardButton{
-		{
-			{Text: "Option 1", CallbackData: "opt1"},
-			{Text: "Option 2", CallbackData: "opt2"},
-		},
-		{
-			{Text: "Option 3", CallbackData: "opt3"},
-		},
-	}
-
-	markup := &models.InlineKeyboardMarkup{InlineKeyboard: keyboard}
-
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      update.Message.Chat.ID,
-		Text:        "Choose an option:",
-		ReplyMarkup: markup,
-	})
+	err := tg.sendHomeMenu(ctx, bot, update.Message.Chat.ID)
 	if err != nil {
 		tg.log.Error("failed to send menu", slog.String("error", err.Error()))
 	}
+}
+
+func mainMenuMarkup() *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "Log activity", CallbackData: callbackLogActivity},
+				{Text: "Today stats", CallbackData: callbackTodayStats},
+			},
+			{
+				{Text: "Help", CallbackData: callbackHelp},
+			},
+		},
+	}
+}
+
+func (tg *TgHandlers) sendHomeMenu(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        "What would you like to do?",
+		ReplyMarkup: mainMenuMarkup(),
+	})
+	return err
 }

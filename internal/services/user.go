@@ -22,7 +22,7 @@ func NewUserService(log *slog.Logger, repo UserCreator) *UserService {
 // It delegates user creation to the repository and logs the result.
 func (s *UserService) RegisterUser(ctx context.Context, userID int64, username, firstName string) error {
 	if err := s.repo.CreateUser(ctx, userID, username, firstName); err != nil {
-		s.log.Error("failed to create user", slog.String("error", err.Error()))
+		s.log.Warn("failed to create user", slog.String("error", err.Error()))
 		return err
 	}
 
