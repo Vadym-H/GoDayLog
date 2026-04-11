@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	tgbot "github.com/go-telegram/bot"
@@ -19,7 +20,7 @@ func (tg *TgHandlers) HandleStart(ctx context.Context, bot *tgbot.Bot, update *m
 	chatID := update.Message.Chat.ID
 	tg.clearAwaitingLog(chatID)
 
-	err := tg.userService.RegisterUser(ctx, user.ID, user.Username, user.FirstName)
+	err := tg.userService.RegisterUser(ctx, "telegram", strconv.FormatInt(user.ID, 10))
 	if err != nil {
 		if !errors.Is(err, storage.UserExists) {
 			tg.log.Error("failed to create user", slog.String("error", err.Error()))

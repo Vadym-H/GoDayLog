@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/storage"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -32,23 +34,44 @@ func (s *Storage) Close() {
 	s.db.Close()
 }
 
-// CreateUser creates a user in the database. It is called by the service layer when registering a user.
-func (s *Storage) CreateUser(ctx context.Context, userID int64, username, firstName string) error {
+// CreateUser creates a user and links the external provider identity.
+func (s *Storage) CreateUser(ctx context.Context, provider, externalID string) error {
 	const op = "storage.CreateUser"
 
-	query := `INSERT INTO users (id, username, first_name)
-	VALUES ($1, $2, $3)
-	ON CONFLICT (id) DO NOTHING`
-
-	_, err := s.db.Exec(ctx, query, userID, username, firstName)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("%s: %w", op, storage.UserExists)
+		return fmt.Errorf("%s: begin tx: %w", op, err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	var userID string
+	err = tx.QueryRow(ctx, `INSERT INTO users DEFAULT VALUES RETURNING id`).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("%s: create user: %w", op, err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO user_identities (user_id, provider, external_id)
+		VALUES ($1, $2, $3)
+	`, userID, provider, externalID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("%s: %w", op, storage.UserExists)
+		}
+
+		return fmt.Errorf("%s: create user identity: %w", op, err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%s: commit tx: %w", op, err)
 	}
 
 	s.log.Info("user created",
-		slog.Int64("user_id", userID),
-		slog.String("username", username),
-		slog.String("first_name", firstName),
+		slog.String("provider", provider),
+		slog.String("external_id", externalID),
 	)
 
 	return nil
