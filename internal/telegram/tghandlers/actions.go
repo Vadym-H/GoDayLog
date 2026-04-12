@@ -2,10 +2,12 @@ package tghandlers
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
 
+	"github.com/Vadym-H/GoDayLog/internal/storage"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -289,9 +291,29 @@ func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64
 }
 
 func (tg *TgHandlers) sendContextPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+	const op = "telegram.tghandlers.sendContextPrompt"
+	currentContext, err := tg.userService.GetUserContext(ctx, "telegram", strconv.FormatInt(chatID, 10))
+	if err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			tg.log.Info("user not found when sending context prompt")
+		} else {
+			tg.log.Debug("failed to get user context",
+				slog.String("op", op),
+				slog.String("error", err.Error()),
+			)
+		}
+	}
+
+	text := "To personalize activity insights, please share a short context about you: your routine, priorities, and what feels useful (for example: work focus, fitness, study, family, or wellbeing)." +
+		"\n\nA few lines are enough. This helps the AI better understand which activities matter for you most."
+
+	if currentContext != "" {
+		text += "\n\nYour current context: " + currentContext
+	}
+
+	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID: chatID,
-		Text:   "To personalize activity insights, please share a short context about you: your routine, priorities, and what feels useful (for example: work focus, fitness, study, family, or wellbeing).\n\nA few lines are enough. This helps the AI better understand which activities matter for you most.",
+		Text:   text,
 		ReplyMarkup: &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
 			{Text: "Skip", CallbackData: callbackSkipContext},
 		}}},

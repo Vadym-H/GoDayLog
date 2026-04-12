@@ -2,21 +2,28 @@ package services
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+
+	"github.com/Vadym-H/GoDayLog/internal/storage"
 )
 
 type UserCreator interface {
 	CreateUser(ctx context.Context, provider, externalID string) (string, bool, error)
+}
+type UserContext interface {
+	GetUserContext(ctx context.Context, provider, externalID string) (string, error)
 	UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error
 }
 
 type UserService struct {
-	log  *slog.Logger
-	repo UserCreator
+	log     *slog.Logger
+	repo    UserCreator
+	userctx UserContext
 }
 
-func NewUserService(log *slog.Logger, repo UserCreator) *UserService {
-	return &UserService{log: log, repo: repo}
+func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext) *UserService {
+	return &UserService{log: log, repo: repo, userctx: userctx}
 }
 
 // RegisterUser registers an external identity and backing user.
@@ -47,7 +54,7 @@ func (s *UserService) RegisterUser(ctx context.Context, provider, externalID str
 func (s *UserService) UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error {
 	const op = "services.UserService.UpdateUserContext"
 
-	if err := s.repo.UpdateUserContext(ctx, provider, externalID, llmContext); err != nil {
+	if err := s.userctx.UpdateUserContext(ctx, provider, externalID, llmContext); err != nil {
 		s.log.Warn("failed to update user context",
 			slog.String("op", op),
 			slog.String("error", err.Error()),
@@ -62,4 +69,26 @@ func (s *UserService) UpdateUserContext(ctx context.Context, provider, externalI
 	)
 
 	return nil
+}
+
+func (s *UserService) GetUserContext(ctx context.Context, provider, externalID string) (string, error) {
+	const op = "services.UserService.GetUserContext"
+
+	llmContext, err := s.userctx.GetUserContext(ctx, provider, externalID)
+	if err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			s.log.Info("user not found when getting context",
+				slog.String("op", op),
+				slog.String("provider", provider),
+				slog.String("external_id", externalID),
+			)
+			return "", err
+		}
+		s.log.Warn("failed to get user context",
+			slog.String("op", op),
+			slog.String("error", err.Error()),
+		)
+		return "", err
+	}
+	return llmContext, nil
 }

@@ -20,7 +20,7 @@ type Bot struct {
 func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error) {
 	const op = "telegram.bot.New"
 
-	userService := services.NewUserService(log, storage)
+	userService := services.NewUserService(log, storage, storage)
 
 	b := &Bot{
 		log:        log,
