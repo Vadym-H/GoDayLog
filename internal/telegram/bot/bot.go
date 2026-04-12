@@ -21,10 +21,11 @@ func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error)
 	const op = "telegram.bot.New"
 
 	userService := services.NewUserService(log, storage, storage)
+	messageService := services.NewMessageService(log, storage)
 
 	b := &Bot{
 		log:        log,
-		tgHandlers: tghandlers.New(log, userService),
+		tgHandlers: tghandlers.New(log, userService, messageService),
 	}
 
 	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.handleMessage))

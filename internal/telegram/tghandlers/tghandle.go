@@ -8,19 +8,21 @@ import (
 )
 
 type TgHandlers struct {
-	log           *slog.Logger
-	userService   *services.UserService
-	pendingMu     sync.RWMutex
-	pendingLog    map[int64]struct{}
-	pendingLlmCtx map[int64]struct{}
+	log            *slog.Logger
+	userService    *services.UserService
+	messageService *services.MessageService
+	pendingMu      sync.RWMutex
+	pendingLog     map[int64]struct{}
+	pendingLlmCtx  map[int64]struct{}
 }
 
-func New(log *slog.Logger, userService *services.UserService) *TgHandlers {
+func New(log *slog.Logger, userService *services.UserService, messageService *services.MessageService) *TgHandlers {
 	return &TgHandlers{
-		log:           log,
-		userService:   userService,
-		pendingLog:    make(map[int64]struct{}),
-		pendingLlmCtx: make(map[int64]struct{}),
+		log:            log,
+		userService:    userService,
+		messageService: messageService,
+		pendingLog:     make(map[int64]struct{}),
+		pendingLlmCtx:  make(map[int64]struct{}),
 	}
 }
 
@@ -48,6 +50,14 @@ func (tg *TgHandlers) clearAwaitingLog(chatID int64) {
 	tg.pendingMu.Unlock()
 }
 
+func (tg *TgHandlers) isAwaitingLog(chatID int64) bool {
+	tg.pendingMu.RLock()
+	defer tg.pendingMu.RUnlock()
+
+	_, ok := tg.pendingLog[chatID]
+	return ok
+}
+
 func (tg *TgHandlers) setAwaitingContext(chatID int64) {
 	tg.pendingMu.Lock()
 	tg.pendingLlmCtx[chatID] = struct{}{}
@@ -70,4 +80,12 @@ func (tg *TgHandlers) clearAwaitingContext(chatID int64) {
 	tg.pendingMu.Lock()
 	delete(tg.pendingLlmCtx, chatID)
 	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) isAwaitingContext(chatID int64) bool {
+	tg.pendingMu.RLock()
+	defer tg.pendingMu.RUnlock()
+
+	_, ok := tg.pendingLlmCtx[chatID]
+	return ok
 }

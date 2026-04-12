@@ -111,12 +111,18 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 		tg.setAwaitingContext(chatID)
 		err = tg.sendContextPrompt(ctx, bot, chatID)
 	case callbackCancelLog:
+		if !tg.isAwaitingLog(chatID) {
+			return
+		}
 		tg.clearAwaitingLog(chatID)
 		_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Log activity canceled.",
 		})
 	case callbackSkipContext:
+		if !tg.isAwaitingContext(chatID) {
+			return
+		}
 		tg.clearAwaitingContext(chatID)
 		err = tg.finishSkippedContextFlow(ctx, bot, chatID)
 	default:
@@ -161,7 +167,29 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		return true
 	}
 
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+	providerExternalID := strconv.FormatInt(update.Message.From.ID, 10)
+	externalMessageID := strconv.Itoa(update.Message.ID)
+
+	_, err := tg.messageService.SaveMessage(ctx, "telegram", providerExternalID, externalMessageID, text)
+	if err != nil {
+		tg.log.Error("failed to save activity message",
+			slog.String("op", op),
+			slog.String("error", err.Error()),
+		)
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Could not save your activity right now. Please try again.",
+		})
+		if sendErr != nil {
+			tg.log.Error("failed to send activity save error",
+				slog.String("op", op),
+				slog.String("error", sendErr.Error()),
+			)
+		}
+		return true
+	}
+
+	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID: chatID,
 		Text:   "Your activity was saved.",
 	})
