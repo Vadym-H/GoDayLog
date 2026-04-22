@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"log/slog"
+
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 )
 
 const (
@@ -11,7 +13,7 @@ const (
 )
 
 type MessageRepository interface {
-	SaveMessage(ctx context.Context, provider, externalID, externalMessageID, text string) (string, error)
+	SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error)
 	UpdateMessageStatus(ctx context.Context, messageID, status, statusError string) error
 	DeleteMessage(ctx context.Context, messageID string) error
 }
@@ -25,10 +27,10 @@ func NewMessageService(log *slog.Logger, repo MessageRepository) *MessageService
 	return &MessageService{log: log, repo: repo}
 }
 
-func (s *MessageService) SaveMessage(ctx context.Context, provider, externalID, externalMessageID, text string) (string, error) {
+func (s *MessageService) SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error) {
 	const op = "services.MessageService.SaveMessage"
 
-	messageID, err := s.repo.SaveMessage(ctx, provider, externalID, externalMessageID, text)
+	messageID, err := s.repo.SaveMessage(ctx, id, externalMessageID, text)
 	if err != nil {
 		s.log.Warn("failed to save message",
 			slog.String("op", op),

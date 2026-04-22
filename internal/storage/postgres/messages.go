@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -36,7 +37,7 @@ func NewMessageRepo(s *Storage) *MessageRepo {
 	return &MessageRepo{db: s.db, log: s.log}
 }
 
-func (r *MessageRepo) SaveMessage(ctx context.Context, provider, externalID, externalMessageID, text string) (string, error) {
+func (r *MessageRepo) SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error) {
 	const op = "storage.postgres.SaveMessage"
 
 	status := MessageStatusPending
@@ -55,7 +56,7 @@ func (r *MessageRepo) SaveMessage(ctx context.Context, provider, externalID, ext
 		  AND ui.external_id = $2
 		  AND u.deleted_at IS NULL
 		RETURNING id
-	`, provider, externalID, strings.TrimSpace(externalMessageID), trimmedText, status).Scan(&messageID)
+	`, id.Provider, id.ExternalID, strings.TrimSpace(externalMessageID), trimmedText, status).Scan(&messageID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)

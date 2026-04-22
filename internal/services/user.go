@@ -5,15 +5,16 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 )
 
 type UserCreator interface {
-	CreateUser(ctx context.Context, provider, externalID string) (string, bool, error)
+	CreateUser(ctx context.Context, id domain.Identity) (string, bool, error)
 }
 type UserContext interface {
-	GetUserContext(ctx context.Context, provider, externalID string) (string, error)
-	UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error
+	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
+	UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error
 }
 
 type UserService struct {
@@ -27,10 +28,10 @@ func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext) *Us
 }
 
 // RegisterUser registers an external identity and backing user.
-func (s *UserService) RegisterUser(ctx context.Context, provider, externalID string) (string, bool, error) {
+func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error) {
 	const op = "services.UserService.RegisterUser"
 
-	userID, created, err := s.repo.CreateUser(ctx, provider, externalID)
+	userID, created, err := s.repo.CreateUser(ctx, id)
 	if err != nil {
 		s.log.Warn("failed to create user",
 			slog.String("op", op),
@@ -42,8 +43,8 @@ func (s *UserService) RegisterUser(ctx context.Context, provider, externalID str
 	if created {
 		s.log.Info("user registered",
 			slog.String("op", op),
-			slog.String("provider", provider),
-			slog.String("external_id", externalID),
+			slog.String("provider", id.Provider),
+			slog.String("external_id", id.ExternalID),
 			slog.String("user_id", userID),
 		)
 	}
@@ -51,10 +52,10 @@ func (s *UserService) RegisterUser(ctx context.Context, provider, externalID str
 	return userID, created, nil
 }
 
-func (s *UserService) UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error {
+func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
 	const op = "services.UserService.UpdateUserContext"
 
-	if err := s.userctx.UpdateUserContext(ctx, provider, externalID, llmContext); err != nil {
+	if err := s.userctx.UpdateUserContext(ctx, id, llmContext); err != nil {
 		s.log.Warn("failed to update user context",
 			slog.String("op", op),
 			slog.String("error", err.Error()),
@@ -64,23 +65,23 @@ func (s *UserService) UpdateUserContext(ctx context.Context, provider, externalI
 
 	s.log.Info("user context updated",
 		slog.String("op", op),
-		slog.String("provider", provider),
-		slog.String("external_id", externalID),
+		slog.String("provider", id.Provider),
+		slog.String("external_id", id.ExternalID),
 	)
 
 	return nil
 }
 
-func (s *UserService) GetUserContext(ctx context.Context, provider, externalID string) (string, error) {
+func (s *UserService) GetUserContext(ctx context.Context, id domain.Identity) (string, error) {
 	const op = "services.UserService.GetUserContext"
 
-	llmContext, err := s.userctx.GetUserContext(ctx, provider, externalID)
+	llmContext, err := s.userctx.GetUserContext(ctx, id)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
 			s.log.Info("user not found when getting context",
 				slog.String("op", op),
-				slog.String("provider", provider),
-				slog.String("external_id", externalID),
+				slog.String("provider", id.Provider),
+				slog.String("external_id", id.ExternalID),
 			)
 			return "", err
 		}

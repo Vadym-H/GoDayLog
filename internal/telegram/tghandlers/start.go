@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strconv"
 
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -21,7 +22,8 @@ func (tg *TgHandlers) HandleStart(ctx context.Context, bot *tgbot.Bot, update *m
 	tg.clearAwaitingLog(chatID)
 	tg.clearAwaitingContext(chatID)
 
-	_, isNewUser, err := tg.userService.RegisterUser(ctx, "telegram", strconv.FormatInt(user.ID, 10))
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(user.ID, 10)}
+	_, isNewUser, err := tg.userService.RegisterUser(ctx, identity)
 	if err != nil {
 		tg.log.Error("failed to register user",
 			slog.String("op", op),

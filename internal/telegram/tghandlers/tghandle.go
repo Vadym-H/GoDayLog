@@ -4,16 +4,18 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 )
 
 type userService interface {
-	RegisterUser(ctx context.Context, provider, externalID string) (string, bool, error)
-	GetUserContext(ctx context.Context, provider, externalID string) (string, error)
-	UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error
+	RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error)
+	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
+	UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error
 }
 
 type messageService interface {
-	SaveMessage(ctx context.Context, provider, externalID, externalMessageID, text string) (string, error)
+	SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error)
 }
 
 type TgHandlers struct {

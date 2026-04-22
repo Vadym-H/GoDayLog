@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -167,10 +168,10 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		return true
 	}
 
-	providerExternalID := strconv.FormatInt(update.Message.From.ID, 10)
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
 	externalMessageID := strconv.Itoa(update.Message.ID)
 
-	_, err := tg.messageService.SaveMessage(ctx, "telegram", providerExternalID, externalMessageID, text)
+	_, err := tg.messageService.SaveMessage(ctx, identity, externalMessageID, text)
 	if err != nil {
 		tg.log.Error("failed to save activity message",
 			slog.String("op", op),
@@ -229,8 +230,8 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 		return true
 	}
 
-	providerExternalID := strconv.FormatInt(update.Message.From.ID, 10)
-	err := tg.userService.UpdateUserContext(ctx, "telegram", providerExternalID, text)
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
+	err := tg.userService.UpdateUserContext(ctx, identity, text)
 	if err != nil {
 		tg.log.Error("failed to save user context",
 			slog.String("op", op),
@@ -320,7 +321,8 @@ func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64
 
 func (tg *TgHandlers) sendContextPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
 	const op = "telegram.tghandlers.sendContextPrompt"
-	currentContext, err := tg.userService.GetUserContext(ctx, "telegram", strconv.FormatInt(chatID, 10))
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
+	currentContext, err := tg.userService.GetUserContext(ctx, identity)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
 			tg.log.Info("user not found when sending context prompt")

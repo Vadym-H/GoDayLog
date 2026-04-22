@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -23,11 +24,11 @@ func NewUserRepo(s *Storage) *UserRepo {
 
 // CreateUser creates a user and links the external provider identity.
 // It returns created=false when identity already exists.
-func (r *UserRepo) CreateUser(ctx context.Context, provider, externalID string) (string, bool, error) {
+func (r *UserRepo) CreateUser(ctx context.Context, id domain.Identity) (string, bool, error) {
 	const op = "storage.postgres.CreateUser"
 	log := r.log.With(
 		slog.String("op", op),
-		slog.String("provider", provider),
+		slog.String("provider", id.Provider),
 	)
 
 	tx, err := r.db.Begin(ctx)
@@ -52,7 +53,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, provider, externalID string) 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO user_identities (user_id, provider, external_id)
 		VALUES ($1, $2, $3)
-	`, userID, provider, externalID)
+	`, userID, id.Provider, id.ExternalID)
 
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
@@ -61,7 +62,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, provider, externalID string) 
         SELECT user_id
         FROM user_identities
         WHERE provider = $1 AND external_id = $2
-    `, provider, externalID).Scan(&userID)
+    `, id.Provider, id.ExternalID).Scan(&userID)
 
 			if err != nil {
 				log.Warn("failed to load existing user after duplicate identity", slog.String("error", err.Error()))
@@ -82,7 +83,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, provider, externalID string) 
 	return userID, true, nil
 }
 
-func (r *UserRepo) UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error {
+func (r *UserRepo) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
 	const op = "storage.postgres.UpdateUserContext"
 
 	// Update context by external identity so Telegram-specific IDs stay outside domain tables.
@@ -94,7 +95,7 @@ func (r *UserRepo) UpdateUserContext(ctx context.Context, provider, externalID, 
 		  AND ui.provider = $2
 		  AND ui.external_id = $3
 		  AND u.deleted_at IS NULL
-	`, llmContext, provider, externalID)
+	`, llmContext, id.Provider, id.ExternalID)
 	if err != nil {
 		return fmt.Errorf("%s: update context: %w", op, err)
 	}
@@ -105,14 +106,14 @@ func (r *UserRepo) UpdateUserContext(ctx context.Context, provider, externalID, 
 
 	r.log.Info("user context updated",
 		slog.String("op", op),
-		slog.String("provider", provider),
-		slog.String("external_id", externalID),
+		slog.String("provider", id.Provider),
+		slog.String("external_id", id.ExternalID),
 	)
 
 	return nil
 }
 
-func (r *UserRepo) GetUserContext(ctx context.Context, provider, externalID string) (string, error) {
+func (r *UserRepo) GetUserContext(ctx context.Context, id domain.Identity) (string, error) {
 	const op = "storage.postgres.GetUserContext"
 
 	var llmContext string
@@ -121,7 +122,7 @@ func (r *UserRepo) GetUserContext(ctx context.Context, provider, externalID stri
         FROM users u
         JOIN user_identities ui ON ui.user_id = u.id
         WHERE ui.provider = $1 AND ui.external_id = $2 AND u.deleted_at IS NULL
-    `, provider, externalID).Scan(&llmContext)
+    `, id.Provider, id.ExternalID).Scan(&llmContext)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
