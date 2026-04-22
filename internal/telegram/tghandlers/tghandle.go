@@ -1,22 +1,31 @@
 package tghandlers
 
 import (
+	"context"
 	"log/slog"
 	"sync"
-
-	"github.com/Vadym-H/GoDayLog/internal/services"
 )
+
+type userService interface {
+	RegisterUser(ctx context.Context, provider, externalID string) (string, bool, error)
+	GetUserContext(ctx context.Context, provider, externalID string) (string, error)
+	UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error
+}
+
+type messageService interface {
+	SaveMessage(ctx context.Context, provider, externalID, externalMessageID, text string) (string, error)
+}
 
 type TgHandlers struct {
 	log            *slog.Logger
-	userService    *services.UserService
-	messageService *services.MessageService
+	userService    userService
+	messageService messageService
 	pendingMu      sync.RWMutex
 	pendingLog     map[int64]struct{}
 	pendingLlmCtx  map[int64]struct{}
 }
 
-func New(log *slog.Logger, userService *services.UserService, messageService *services.MessageService) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService) *TgHandlers {
 	return &TgHandlers{
 		log:            log,
 		userService:    userService,

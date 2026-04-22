@@ -28,8 +28,6 @@ func main() {
 	log.Info("Starting server...", slog.String("env", cfg.Env))
 	log.Debug("Debug message are enabled")
 
-	log.Info("DatabaseURL", slog.String("url", cfg.Database.DatabaseUrl))
-
 	//init storage
 	dbCtx, cancelDB := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelDB()

@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -25,7 +27,16 @@ var allowedMessageStatuses = map[string]struct{}{
 	MessageStatusFailed:     {},
 }
 
-func (s *Storage) SaveMessage(ctx context.Context, provider, externalID, externalMessageID, text string) (string, error) {
+type MessageRepo struct {
+	db  *pgxpool.Pool
+	log *slog.Logger
+}
+
+func NewMessageRepo(s *Storage) *MessageRepo {
+	return &MessageRepo{db: s.db, log: s.log}
+}
+
+func (r *MessageRepo) SaveMessage(ctx context.Context, provider, externalID, externalMessageID, text string) (string, error) {
 	const op = "storage.postgres.SaveMessage"
 
 	status := MessageStatusPending
@@ -35,7 +46,7 @@ func (s *Storage) SaveMessage(ctx context.Context, provider, externalID, externa
 	}
 
 	var messageID string
-	err := s.db.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO messages (user_id, external_message_id, text, status)
 		SELECT u.id, NULLIF($3, ''), $4, $5
 		FROM users u
@@ -55,7 +66,7 @@ func (s *Storage) SaveMessage(ctx context.Context, provider, externalID, externa
 	return messageID, nil
 }
 
-func (s *Storage) UpdateMessageStatus(ctx context.Context, messageID, status, statusError string) error {
+func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, status, statusError string) error {
 	const op = "storage.postgres.UpdateMessageStatus"
 
 	if _, ok := allowedMessageStatuses[status]; !ok {
@@ -71,7 +82,7 @@ func (s *Storage) UpdateMessageStatus(ctx context.Context, messageID, status, st
 		dbErr = trimmedErr
 	}
 
-	cmdTag, err := s.db.Exec(ctx, `
+	cmdTag, err := r.db.Exec(ctx, `
 		UPDATE messages
 		SET status = $2,
 		    error = $3
@@ -88,10 +99,10 @@ func (s *Storage) UpdateMessageStatus(ctx context.Context, messageID, status, st
 	return nil
 }
 
-func (s *Storage) DeleteMessage(ctx context.Context, messageID string) error {
+func (r *MessageRepo) DeleteMessage(ctx context.Context, messageID string) error {
 	const op = "storage.postgres.DeleteMessage"
 
-	cmdTag, err := s.db.Exec(ctx, `DELETE FROM messages WHERE id = $1`, messageID)
+	cmdTag, err := r.db.Exec(ctx, `DELETE FROM messages WHERE id = $1`, messageID)
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23503" {
 			return fmt.Errorf("%s: %w", op, storage.ErrMessageInUse)

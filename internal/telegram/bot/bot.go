@@ -17,11 +17,14 @@ type Bot struct {
 	tgHandlers *tghandlers.TgHandlers
 }
 
-func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error) {
+func New(token string, log *slog.Logger, db *storage.Storage) (*Bot, error) {
 	const op = "telegram.bot.New"
 
-	userService := services.NewUserService(log, storage, storage)
-	messageService := services.NewMessageService(log, storage)
+	userRepo := storage.NewUserRepo(db)
+	messageRepo := storage.NewMessageRepo(db)
+
+	userService := services.NewUserService(log, userRepo, userRepo)
+	messageService := services.NewMessageService(log, messageRepo)
 
 	b := &Bot{
 		log:        log,

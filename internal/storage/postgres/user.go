@@ -9,18 +9,28 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type UserRepo struct {
+	db  *pgxpool.Pool
+	log *slog.Logger
+}
+
+func NewUserRepo(s *Storage) *UserRepo {
+	return &UserRepo{db: s.db, log: s.log}
+}
 
 // CreateUser creates a user and links the external provider identity.
 // It returns created=false when identity already exists.
-func (s *Storage) CreateUser(ctx context.Context, provider, externalID string) (string, bool, error) {
+func (r *UserRepo) CreateUser(ctx context.Context, provider, externalID string) (string, bool, error) {
 	const op = "storage.postgres.CreateUser"
-	log := s.log.With(
+	log := r.log.With(
 		slog.String("op", op),
 		slog.String("provider", provider),
 	)
 
-	tx, err := s.db.Begin(ctx)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		log.Warn("failed to begin transaction", slog.String("error", err.Error()))
 		return "", false, fmt.Errorf("%s: begin tx: %w", op, err)
@@ -47,7 +57,7 @@ func (s *Storage) CreateUser(ctx context.Context, provider, externalID string) (
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
 			_ = tx.Rollback(ctx)
-			err = s.db.QueryRow(ctx, `
+			err = r.db.QueryRow(ctx, `
         SELECT user_id
         FROM user_identities
         WHERE provider = $1 AND external_id = $2
@@ -72,11 +82,11 @@ func (s *Storage) CreateUser(ctx context.Context, provider, externalID string) (
 	return userID, true, nil
 }
 
-func (s *Storage) UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error {
+func (r *UserRepo) UpdateUserContext(ctx context.Context, provider, externalID, llmContext string) error {
 	const op = "storage.postgres.UpdateUserContext"
 
 	// Update context by external identity so Telegram-specific IDs stay outside domain tables.
-	cmdTag, err := s.db.Exec(ctx, `
+	cmdTag, err := r.db.Exec(ctx, `
 		UPDATE users u
 		SET llm_context = $1
 		FROM user_identities ui
@@ -93,7 +103,7 @@ func (s *Storage) UpdateUserContext(ctx context.Context, provider, externalID, l
 		return fmt.Errorf("%s: user not found for provider/external_id", op)
 	}
 
-	s.log.Info("user context updated",
+	r.log.Info("user context updated",
 		slog.String("op", op),
 		slog.String("provider", provider),
 		slog.String("external_id", externalID),
@@ -102,11 +112,11 @@ func (s *Storage) UpdateUserContext(ctx context.Context, provider, externalID, l
 	return nil
 }
 
-func (s *Storage) GetUserContext(ctx context.Context, provider, externalID string) (string, error) {
+func (r *UserRepo) GetUserContext(ctx context.Context, provider, externalID string) (string, error) {
 	const op = "storage.postgres.GetUserContext"
 
 	var llmContext string
-	err := s.db.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, `
         SELECT u.llm_context
         FROM users u
         JOIN user_identities ui ON ui.user_id = u.id
