@@ -2,35 +2,83 @@ package services
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+
+	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
+	"github.com/Vadym-H/GoDayLog/internal/storage"
 )
 
 type UserCreator interface {
-	CreateUser(ctx context.Context, userID int64, username, firstName string) error
+	CreateUser(ctx context.Context, id domain.Identity) (string, bool, error)
+}
+type UserContext interface {
+	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
+	UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error
 }
 
 type UserService struct {
-	log  *slog.Logger
-	repo UserCreator
+	log     *slog.Logger
+	repo    UserCreator
+	userctx UserContext
 }
 
-func NewUserService(log *slog.Logger, repo UserCreator) *UserService {
-	return &UserService{log: log, repo: repo}
+func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext) *UserService {
+	return &UserService{log: log, repo: repo, userctx: userctx}
 }
 
-// RegisterUser is a service layer method that registers a user in the system.
-// It delegates user creation to the repository and logs the result.
-func (s *UserService) RegisterUser(ctx context.Context, userID int64, username, firstName string) error {
-	if err := s.repo.CreateUser(ctx, userID, username, firstName); err != nil {
-		s.log.Warn("failed to create user", slog.String("error", err.Error()))
+// RegisterUser registers an external identity and backing user.
+func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error) {
+	log := logger.From(ctx, s.log)
+
+	userID, created, err := s.repo.CreateUser(ctx, id)
+	if err != nil {
+		log.Error("failed to create user", slog.Any("error", err))
+		return "", false, err
+	}
+
+	if created {
+		log.Info("user registered",
+			slog.String("provider", id.Provider),
+			slog.String("external_id", id.ExternalID),
+			slog.String("user_id", userID),
+		)
+	}
+
+	return userID, created, nil
+}
+
+func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
+	log := logger.From(ctx, s.log)
+
+	if err := s.userctx.UpdateUserContext(ctx, id, llmContext); err != nil {
+		log.Error("failed to update user context", slog.Any("error", err))
 		return err
 	}
 
-	s.log.Info("user registered",
-		slog.Int64("user_id", userID),
-		slog.String("username", username),
-		slog.String("first_name", firstName),
+	log.Info("user context updated",
+		slog.String("provider", id.Provider),
+		slog.String("external_id", id.ExternalID),
 	)
 
 	return nil
+}
+
+func (s *UserService) GetUserContext(ctx context.Context, id domain.Identity) (string, error) {
+	log := logger.From(ctx, s.log)
+
+	llmContext, err := s.userctx.GetUserContext(ctx, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			log.Debug("user not found when getting context",
+				slog.String("provider", id.Provider),
+				slog.String("external_id", id.ExternalID),
+			)
+			return "", err
+		}
+		log.Error("failed to get user context", slog.Any("error", err))
+		return "", err
+	}
+	return llmContext, nil
 }

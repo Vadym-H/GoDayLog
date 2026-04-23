@@ -13,6 +13,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - daylog_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   daylog:
     build:
@@ -20,7 +25,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: daylog-app
     volumes:
-      - .:/app   # 🔥 код с хоста
+      - .:/app
     working_dir: /app
     command: ["go", "run", "./cmd/app"]
     environment:
@@ -34,7 +39,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 volumes:
   daylog_postgres_data:

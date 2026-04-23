@@ -4,17 +4,20 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
 const (
-	callbackActionPrefix = "action:"
-	callbackLogActivity  = callbackActionPrefix + "log"
-	callbackTodayStats   = callbackActionPrefix + "stats"
-	callbackHelp         = callbackActionPrefix + "help"
-	callbackHome         = callbackActionPrefix + "home"
-	callbackCancelLog    = callbackActionPrefix + "cancel_log"
+	callbackActionPrefix  = "action:"
+	callbackLogActivity   = callbackActionPrefix + "log"
+	callbackTodayStats    = callbackActionPrefix + "stats"
+	callbackHelp          = callbackActionPrefix + "help"
+	callbackHome          = callbackActionPrefix + "home"
+	callbackCancelLog     = callbackActionPrefix + "cancel_log"
+	callbackSkipContext   = callbackActionPrefix + "skip_context"
+	callbackUpdateContext = callbackActionPrefix + "update_context"
 )
 
 // HandleMenu sends the home screen with inline actions.
@@ -23,9 +26,8 @@ func (tg *TgHandlers) HandleMenu(ctx context.Context, bot *tgbot.Bot, update *mo
 		return
 	}
 
-	err := tg.sendHomeMenu(ctx, bot, update.Message.Chat.ID)
-	if err != nil {
-		tg.log.Error("failed to send menu", slog.String("error", err.Error()))
+	if err := tg.sendHomeMenu(ctx, bot, update.Message.Chat.ID); err != nil {
+		logger.From(ctx, tg.log).Error("failed to send menu", slog.Any("error", err))
 	}
 }
 
@@ -38,6 +40,7 @@ func mainMenuMarkup() *models.InlineKeyboardMarkup {
 			},
 			{
 				{Text: "Help", CallbackData: callbackHelp},
+				{Text: "Update context", CallbackData: callbackUpdateContext},
 			},
 		},
 	}

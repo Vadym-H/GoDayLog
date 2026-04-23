@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/services"
 	storage "github.com/Vadym-H/GoDayLog/internal/storage/postgres"
 	"github.com/Vadym-H/GoDayLog/internal/telegram/tghandlers"
@@ -17,15 +18,19 @@ type Bot struct {
 	tgHandlers *tghandlers.TgHandlers
 }
 
-func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error) {
-	userService := services.NewUserService(log, storage)
+func New(token string, log *slog.Logger, db *storage.Storage) (*Bot, error) {
+	userRepo := storage.NewUserRepo(db)
+	messageRepo := storage.NewMessageRepo(db)
+
+	userService := services.NewUserService(log, userRepo, userRepo)
+	messageService := services.NewMessageService(log, messageRepo)
 
 	b := &Bot{
 		log:        log,
-		tgHandlers: tghandlers.New(log, userService),
+		tgHandlers: tghandlers.New(log, userService, messageService),
 	}
 
-	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.handleMessage))
+	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.withRequestID(b.handleMessage)))
 	if err != nil {
 		return nil, err
 	}
@@ -41,14 +46,14 @@ func New(token string, log *slog.Logger, storage *storage.Storage) (*Bot, error)
 		},
 	})
 	if err != nil {
-		log.Error("failed to set bot commands", slog.String("error", err.Error()))
+		log.Warn("failed to set bot commands", slog.Any("error", err))
 	}
 
-	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, b.tgHandlers.HandleStart)
-	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/log", tgbot.MatchTypeExact, b.tgHandlers.HandleLog)
-	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/stats", tgbot.MatchTypeExact, b.tgHandlers.HandleStats)
-	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/help", tgbot.MatchTypeExact, b.tgHandlers.HandleHelp)
-	b.tg.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "action:", tgbot.MatchTypePrefix, b.tgHandlers.HandleMenuAction)
+	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, b.withRequestID(b.tgHandlers.HandleStart))
+	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/log", tgbot.MatchTypeExact, b.withRequestID(b.tgHandlers.HandleLog))
+	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/stats", tgbot.MatchTypeExact, b.withRequestID(b.tgHandlers.HandleStats))
+	b.tg.RegisterHandler(tgbot.HandlerTypeMessageText, "/help", tgbot.MatchTypeExact, b.withRequestID(b.tgHandlers.HandleHelp))
+	b.tg.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "action:", tgbot.MatchTypePrefix, b.withRequestID(b.tgHandlers.HandleMenuAction))
 
 	return b, nil
 }
@@ -59,8 +64,22 @@ func (b *Bot) Start(ctx context.Context) {
 	b.log.Info("telegram bot stopped")
 }
 
+// withRequestID stamps a fresh request ID onto ctx before dispatching to any handler.
+// Every entry point (commands + default) goes through this so all log lines in a
+// request share the same request_id.
+func (b *Bot) withRequestID(h func(context.Context, *tgbot.Bot, *models.Update)) func(context.Context, *tgbot.Bot, *models.Update) {
+	return func(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
+		ctx = logger.WithRequestID(ctx, logger.NewRequestID())
+		h(ctx, bot, update)
+	}
+}
+
 func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
 	if update.Message == nil {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingContextInput(ctx, bot, update) {
 		return
 	}
 
@@ -73,6 +92,6 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 		Text:   "Use /start",
 	})
 	if err != nil {
-		b.log.Error("failed to send default response", slog.String("error", err.Error()))
+		logger.From(ctx, b.log).Error("failed to send default response", slog.Any("error", err))
 	}
 }
