@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -47,25 +47,27 @@ type HTTPServer struct {
 	IdleTimeout time.Duration `yaml:"idle_timeout" env:"SERVER_IDLE_TIMEOUT" env-default:"120s"`
 }
 
-func MustLoad() *Config {
-	// Load .env file
+func MustLoad(log *slog.Logger) *Config {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
+		log.Debug("no .env file found, using system environment variables")
 	}
 
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
-		log.Fatal("CONFIG_PATH is not set")
+		log.Error("CONFIG_PATH is not set")
+		os.Exit(1)
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Fatalf("Config file %s does not found", configPath)
+		log.Error("config file not found", slog.String("path", configPath))
+		os.Exit(1)
 	}
 
 	var cfg Config
 
 	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
-		log.Fatalf("Failed to load config: %s", err)
+		log.Error("failed to load config", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	dbURL := url.URL{

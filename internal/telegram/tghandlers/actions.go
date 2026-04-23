@@ -8,80 +8,65 @@ import (
 	"strings"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
 func (tg *TgHandlers) HandleLog(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
-	const op = "telegram.tghandlers.HandleLog"
-
 	if update.Message == nil {
 		return
 	}
+	log := logger.From(ctx, tg.log)
 
 	tg.clearAwaitingContext(update.Message.Chat.ID)
 	tg.setAwaitingLog(update.Message.Chat.ID)
 
 	if err := tg.sendLogPrompt(ctx, bot, update.Message.Chat.ID); err != nil {
-		tg.log.Error("failed to send log prompt",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to send log prompt", slog.Any("error", err))
 	}
 }
 
 func (tg *TgHandlers) HandleStats(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
-	const op = "telegram.tghandlers.HandleStats"
-
 	if update.Message == nil {
 		return
 	}
+	log := logger.From(ctx, tg.log)
 
 	tg.clearAwaitingLog(update.Message.Chat.ID)
 	tg.clearAwaitingContext(update.Message.Chat.ID)
 
 	if err := tg.sendTodayStats(ctx, bot, update.Message.Chat.ID); err != nil {
-		tg.log.Error("failed to send stats",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to send stats", slog.Any("error", err))
 	}
 }
 
 func (tg *TgHandlers) HandleHelp(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
-	const op = "telegram.tghandlers.HandleHelp"
-
 	if update.Message == nil {
 		return
 	}
+	log := logger.From(ctx, tg.log)
 
 	tg.clearAwaitingLog(update.Message.Chat.ID)
 	tg.clearAwaitingContext(update.Message.Chat.ID)
 
 	if err := tg.sendHelp(ctx, bot, update.Message.Chat.ID); err != nil {
-		tg.log.Error("failed to send help",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to send help", slog.Any("error", err))
 	}
 }
 
 func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
-	const op = "telegram.tghandlers.HandleMenuAction"
-
 	if update.CallbackQuery == nil {
 		return
 	}
+	log := logger.From(ctx, tg.log)
 
 	_, err := bot.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
 		CallbackQueryID: update.CallbackQuery.ID,
 	})
 	if err != nil {
-		tg.log.Error("failed to answer callback query",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to answer callback query", slog.Any("error", err))
 	}
 
 	if update.CallbackQuery.Message.Message == nil {
@@ -131,16 +116,11 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 	}
 
 	if err != nil {
-		tg.log.Error("failed to handle menu action",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to handle menu action", slog.Any("error", err))
 	}
 }
 
 func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
-	const op = "telegram.tghandlers.HandlePendingLogInput"
-
 	if update.Message == nil {
 		return false
 	}
@@ -149,9 +129,9 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 	if !tg.consumeAwaitingLog(chatID) {
 		return false
 	}
+	log := logger.From(ctx, tg.log)
 
 	text := strings.TrimSpace(update.Message.Text)
-	// Keep waiting state when user sends an empty value or another command.
 	if text == "" || strings.HasPrefix(text, "/") {
 		tg.setAwaitingLog(chatID)
 		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -160,10 +140,7 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 			ReplyMarkup: cancelLogMarkup(),
 		})
 		if err != nil {
-			tg.log.Error("failed to ask for activity text",
-				slog.String("op", op),
-				slog.String("error", err.Error()),
-			)
+			log.Error("failed to ask for activity text", slog.Any("error", err))
 		}
 		return true
 	}
@@ -173,19 +150,12 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 
 	_, err := tg.messageService.SaveMessage(ctx, identity, externalMessageID, text)
 	if err != nil {
-		tg.log.Error("failed to save activity message",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Could not save your activity right now. Please try again.",
 		})
 		if sendErr != nil {
-			tg.log.Error("failed to send activity save error",
-				slog.String("op", op),
-				slog.String("error", sendErr.Error()),
-			)
+			log.Error("failed to send activity save error", slog.Any("error", sendErr))
 		}
 		return true
 	}
@@ -195,18 +165,13 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		Text:   "Your activity was saved.",
 	})
 	if err != nil {
-		tg.log.Error("failed to send activity saved confirmation",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to send activity saved confirmation", slog.Any("error", err))
 	}
 
 	return true
 }
 
 func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
-	const op = "telegram.tghandlers.HandlePendingContextInput"
-
 	if update.Message == nil {
 		return false
 	}
@@ -215,17 +180,13 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 	if !tg.consumeAwaitingContext(chatID) {
 		return false
 	}
+	log := logger.From(ctx, tg.log)
 
 	text := strings.TrimSpace(update.Message.Text)
-	// Keep awaiting state until user provides non-empty free text or taps Skip.
 	if text == "" || strings.HasPrefix(text, "/") {
 		tg.setAwaitingContext(chatID)
-		err := tg.sendContextPrompt(ctx, bot, chatID)
-		if err != nil {
-			tg.log.Error("failed to ask for context text",
-				slog.String("op", op),
-				slog.String("error", err.Error()),
-			)
+		if err := tg.sendContextPrompt(ctx, bot, chatID); err != nil {
+			log.Error("failed to ask for context text", slog.Any("error", err))
 		}
 		return true
 	}
@@ -233,29 +194,18 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
 	err := tg.userService.UpdateUserContext(ctx, identity, text)
 	if err != nil {
-		tg.log.Error("failed to save user context",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Could not save your context right now. Please try again.",
 		})
 		if sendErr != nil {
-			tg.log.Error("failed to send context save error",
-				slog.String("op", op),
-				slog.String("error", sendErr.Error()),
-			)
+			log.Error("failed to send context save error", slog.Any("error", sendErr))
 		}
 		return true
 	}
 
-	err = tg.finishSavedContextFlow(ctx, bot, chatID)
-	if err != nil {
-		tg.log.Error("failed to finish context flow",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+	if err = tg.finishSavedContextFlow(ctx, bot, chatID); err != nil {
+		log.Error("failed to finish context flow", slog.Any("error", err))
 	}
 
 	return true
@@ -320,18 +270,10 @@ func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64
 }
 
 func (tg *TgHandlers) sendContextPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	const op = "telegram.tghandlers.sendContextPrompt"
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
 	currentContext, err := tg.userService.GetUserContext(ctx, identity)
-	if err != nil {
-		if errors.Is(err, storage.ErrUserNotFound) {
-			tg.log.Info("user not found when sending context prompt")
-		} else {
-			tg.log.Debug("failed to get user context",
-				slog.String("op", op),
-				slog.String("error", err.Error()),
-			)
-		}
+	if err != nil && !errors.Is(err, storage.ErrUserNotFound) {
+		// non-fatal: proceed without showing current context
 	}
 
 	text := "To personalize activity insights, please share a short context about you: your routine, priorities, and what feels useful (for example: work focus, fitness, study, family, or wellbeing)." +

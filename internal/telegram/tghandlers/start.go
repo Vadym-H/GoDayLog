@@ -6,16 +6,16 @@ import (
 	"strconv"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
 func (tg *TgHandlers) HandleStart(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
-	const op = "telegram.tghandlers.HandleStart"
-
 	if update.Message == nil {
 		return
 	}
+	log := logger.From(ctx, tg.log)
 
 	user := update.Message.From
 	chatID := update.Message.Chat.ID
@@ -25,31 +25,20 @@ func (tg *TgHandlers) HandleStart(ctx context.Context, bot *tgbot.Bot, update *m
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(user.ID, 10)}
 	_, isNewUser, err := tg.userService.RegisterUser(ctx, identity)
 	if err != nil {
-		tg.log.Error("failed to register user",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
-		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "something went wrong, please try again",
 		})
-		if err != nil {
-			tg.log.Error("failed to send error message",
-				slog.String("op", op),
-				slog.String("error", err.Error()),
-			)
+		if sendErr != nil {
+			log.Error("failed to send error message", slog.Any("error", sendErr))
 		}
 		return
 	}
 
 	if isNewUser {
-		// New users provide optional context once so later activity judgments are personalized.
 		tg.setAwaitingContext(chatID)
 		if err = tg.sendContextPrompt(ctx, bot, chatID); err != nil {
-			tg.log.Error("failed to send context prompt",
-				slog.String("op", op),
-				slog.String("error", err.Error()),
-			)
+			log.Error("failed to send context prompt", slog.Any("error", err))
 		}
 		return
 	}

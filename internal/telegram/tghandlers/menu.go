@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -21,18 +22,12 @@ const (
 
 // HandleMenu sends the home screen with inline actions.
 func (tg *TgHandlers) HandleMenu(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
-	const op = "telegram.tghandlers.HandleMenu"
-
 	if update.Message == nil {
 		return
 	}
 
-	err := tg.sendHomeMenu(ctx, bot, update.Message.Chat.ID)
-	if err != nil {
-		tg.log.Error("failed to send menu",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+	if err := tg.sendHomeMenu(ctx, bot, update.Message.Chat.ID); err != nil {
+		logger.From(ctx, tg.log).Error("failed to send menu", slog.Any("error", err))
 	}
 }
 

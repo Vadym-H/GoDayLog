@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 )
 
@@ -29,20 +30,16 @@ func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext) *Us
 
 // RegisterUser registers an external identity and backing user.
 func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error) {
-	const op = "services.UserService.RegisterUser"
+	log := logger.From(ctx, s.log)
 
 	userID, created, err := s.repo.CreateUser(ctx, id)
 	if err != nil {
-		s.log.Warn("failed to create user",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to create user", slog.Any("error", err))
 		return "", false, err
 	}
 
 	if created {
-		s.log.Info("user registered",
-			slog.String("op", op),
+		log.Info("user registered",
 			slog.String("provider", id.Provider),
 			slog.String("external_id", id.ExternalID),
 			slog.String("user_id", userID),
@@ -53,18 +50,14 @@ func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (str
 }
 
 func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
-	const op = "services.UserService.UpdateUserContext"
+	log := logger.From(ctx, s.log)
 
 	if err := s.userctx.UpdateUserContext(ctx, id, llmContext); err != nil {
-		s.log.Warn("failed to update user context",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to update user context", slog.Any("error", err))
 		return err
 	}
 
-	s.log.Info("user context updated",
-		slog.String("op", op),
+	log.Info("user context updated",
 		slog.String("provider", id.Provider),
 		slog.String("external_id", id.ExternalID),
 	)
@@ -73,22 +66,18 @@ func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity,
 }
 
 func (s *UserService) GetUserContext(ctx context.Context, id domain.Identity) (string, error) {
-	const op = "services.UserService.GetUserContext"
+	log := logger.From(ctx, s.log)
 
 	llmContext, err := s.userctx.GetUserContext(ctx, id)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
-			s.log.Info("user not found when getting context",
-				slog.String("op", op),
+			log.Debug("user not found when getting context",
 				slog.String("provider", id.Provider),
 				slog.String("external_id", id.ExternalID),
 			)
 			return "", err
 		}
-		s.log.Warn("failed to get user context",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to get user context", slog.Any("error", err))
 		return "", err
 	}
 	return llmContext, nil

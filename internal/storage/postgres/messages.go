@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
@@ -29,12 +28,11 @@ var allowedMessageStatuses = map[string]struct{}{
 }
 
 type MessageRepo struct {
-	db  *pgxpool.Pool
-	log *slog.Logger
+	db *pgxpool.Pool
 }
 
 func NewMessageRepo(s *Storage) *MessageRepo {
-	return &MessageRepo{db: s.db, log: s.log}
+	return &MessageRepo{db: s.db}
 }
 
 func (r *MessageRepo) SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error) {

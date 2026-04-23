@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 )
 
 const (
@@ -28,28 +29,25 @@ func NewMessageService(log *slog.Logger, repo MessageRepository) *MessageService
 }
 
 func (s *MessageService) SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error) {
-	const op = "services.MessageService.SaveMessage"
+	log := logger.From(ctx, s.log)
 
 	messageID, err := s.repo.SaveMessage(ctx, id, externalMessageID, text)
 	if err != nil {
-		s.log.Warn("failed to save message",
-			slog.String("op", op),
-			slog.String("error", err.Error()),
-		)
+		log.Error("failed to save message", slog.Any("error", err))
 		return "", err
 	}
 
+	log.Info("message saved", slog.String("message_id", messageID))
 	return messageID, nil
 }
 
 func (s *MessageService) MarkDone(ctx context.Context, messageID string) error {
-	const op = "services.MessageService.MarkDone"
+	log := logger.From(ctx, s.log)
 
 	if err := s.repo.UpdateMessageStatus(ctx, messageID, messageStatusDone, ""); err != nil {
-		s.log.Warn("failed to mark message done",
-			slog.String("op", op),
+		log.Error("failed to mark message done",
 			slog.String("message_id", messageID),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		return err
 	}
@@ -58,13 +56,12 @@ func (s *MessageService) MarkDone(ctx context.Context, messageID string) error {
 }
 
 func (s *MessageService) MarkFailed(ctx context.Context, messageID, reason string) error {
-	const op = "services.MessageService.MarkFailed"
+	log := logger.From(ctx, s.log)
 
 	if err := s.repo.UpdateMessageStatus(ctx, messageID, messageStatusFailed, reason); err != nil {
-		s.log.Warn("failed to mark message failed",
-			slog.String("op", op),
+		log.Error("failed to mark message failed",
 			slog.String("message_id", messageID),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		return err
 	}
@@ -73,13 +70,12 @@ func (s *MessageService) MarkFailed(ctx context.Context, messageID, reason strin
 }
 
 func (s *MessageService) DeleteMessage(ctx context.Context, messageID string) error {
-	const op = "services.MessageService.DeleteMessage"
+	log := logger.From(ctx, s.log)
 
 	if err := s.repo.DeleteMessage(ctx, messageID); err != nil {
-		s.log.Warn("failed to delete message",
-			slog.String("op", op),
+		log.Error("failed to delete message",
 			slog.String("message_id", messageID),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		return err
 	}

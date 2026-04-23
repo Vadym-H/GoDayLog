@@ -28,3 +28,5 @@ Dockerfile.dev
 
 *.md
 !README.md
+
+/docs
