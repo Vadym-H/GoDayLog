@@ -36,6 +36,7 @@ type Database struct {
 
 type LLMConfig struct {
 	Provider string        `yaml:"provider" env:"LLM_PROVIDER" env-default:"openai"`
+	BaseURL  string        `yaml:"base_url" env:"LLM_BASE_URL" env-default:"https://api.openai.com/v1"`
 	Model    string        `yaml:"model" env:"LLM_MODEL" env-default:"gpt-3.5-turbo"`
 	Timeout  time.Duration `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
 	APIKey   string        `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`

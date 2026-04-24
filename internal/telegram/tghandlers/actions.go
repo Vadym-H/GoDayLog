@@ -148,7 +148,7 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
 	externalMessageID := strconv.Itoa(update.Message.ID)
 
-	_, err := tg.messageService.SaveMessage(ctx, identity, externalMessageID, text)
+	messageID, err := tg.messageService.SaveMessage(ctx, identity, externalMessageID, text)
 	if err != nil {
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
@@ -158,6 +158,13 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 			log.Error("failed to send activity save error", slog.Any("error", sendErr))
 		}
 		return true
+	}
+
+	if err = tg.aiProcessor.ProcessSavedMessage(ctx, identity, messageID, text); err != nil {
+		log.Error("failed to process saved message with ai",
+			slog.String("message_id", messageID),
+			slog.Any("error", err),
+		)
 	}
 
 	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{

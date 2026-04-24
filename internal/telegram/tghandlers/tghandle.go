@@ -18,20 +18,26 @@ type messageService interface {
 	SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error)
 }
 
+type messageAIProcessor interface {
+	ProcessSavedMessage(ctx context.Context, id domain.Identity, messageID, text string) error
+}
+
 type TgHandlers struct {
 	log            *slog.Logger
 	userService    userService
 	messageService messageService
+	aiProcessor    messageAIProcessor
 	pendingMu      sync.RWMutex
 	pendingLog     map[int64]struct{}
 	pendingLlmCtx  map[int64]struct{}
 }
 
-func New(log *slog.Logger, userService userService, messageService messageService) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor) *TgHandlers {
 	return &TgHandlers{
 		log:            log,
 		userService:    userService,
 		messageService: messageService,
+		aiProcessor:    aiProcessor,
 		pendingLog:     make(map[int64]struct{}),
 		pendingLlmCtx:  make(map[int64]struct{}),
 	}

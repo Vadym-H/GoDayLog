@@ -39,7 +39,7 @@ CREATE TABLE activity_logs (
                                description      TEXT        NOT NULL,
                                tag              TEXT        NOT NULL,
                                is_useful        BOOLEAN     NOT NULL,
-                               duration_minutes INT         NOT NULL CHECK (duration_minutes > 0),
+                               duration_minutes INT         CHECK (duration_minutes > 0),
                                started_at       TIMESTAMPTZ,  -- intentionally nullable: user may omit
                                deleted_at       TIMESTAMPTZ,
                                created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()

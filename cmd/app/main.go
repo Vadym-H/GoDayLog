@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/config"
 	storage "github.com/Vadym-H/GoDayLog/internal/storage/postgres"
 	"github.com/Vadym-H/GoDayLog/internal/telegram/bot"
@@ -42,7 +43,9 @@ func main() {
 	}
 	defer db.Close()
 
-	tgBot, err := bot.New(cfg.Telegram.Token, log, db)
+	aiClient := ai.New(cfg.LLM)
+
+	tgBot, err := bot.New(cfg.Telegram.Token, log, db, aiClient)
 	if err != nil {
 		log.Error("failed to initialize telegram bot", slog.Any("error", err))
 		panic(err)
