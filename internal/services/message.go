@@ -15,7 +15,7 @@ const (
 )
 
 type AIClient interface {
-	ExtractActivity(ctx context.Context, userContext, userMessage string) (ai.ActivityExtraction, error)
+	ExtractActivity(ctx context.Context, userContext, userMessage string) (ai.ActivityResponse, error)
 }
 
 type UserContextReader interface {
@@ -23,7 +23,7 @@ type UserContextReader interface {
 }
 
 type ActivityLogRepository interface {
-	CreateActivityLog(ctx context.Context, messageID string, a ai.ActivityExtraction) error
+	CreateActivityLog(ctx context.Context, messageID string, a ai.ActivityItem) error
 }
 
 type MessageRepository interface {
@@ -56,24 +56,26 @@ func (s *MessageService) SaveMessage(ctx context.Context, id domain.Identity, ex
 }
 
 type MessageAIProcessor struct {
-	log            *slog.Logger
-	ai             AIClient
-	messageService *MessageService
-	userCtxReader  UserContextReader
-	activityRepo   ActivityLogRepository
+	log           *slog.Logger
+	ai            AIClient
+	messageRepo   MessageRepository
+	userCtxReader UserContextReader
+	activityRepo  ActivityLogRepository
 }
 
-func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageService *MessageService, userCtxReader UserContextReader, activityRepo ActivityLogRepository) *MessageAIProcessor {
+func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRepository, userCtxReader UserContextReader, activityRepo ActivityLogRepository) *MessageAIProcessor {
 	return &MessageAIProcessor{
-		log:            log,
-		ai:             ai,
-		messageService: messageService,
-		userCtxReader:  userCtxReader,
-		activityRepo:   activityRepo,
+		log:           log,
+		ai:            ai,
+		messageRepo:   messageRepo,
+		userCtxReader: userCtxReader,
+		activityRepo:  activityRepo,
 	}
 }
 
-func (p *MessageAIProcessor) ProcessSavedMessage(ctx context.Context, id domain.Identity, messageID, text string) error {
+// ExtractActivities calls AI and returns items for user review.
+// On AI failure or invalid input it marks the message as failed and returns an error.
+func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]ai.ActivityItem, error) {
 	log := logger.From(ctx, p.log)
 
 	userContext, err := p.userCtxReader.GetUserContext(ctx, id)
@@ -85,35 +87,41 @@ func (p *MessageAIProcessor) ProcessSavedMessage(ctx context.Context, id domain.
 		userContext = ""
 	}
 
-	extraction, err := p.ai.ExtractActivity(ctx, userContext, text)
+	response, err := p.ai.ExtractActivity(ctx, userContext, text)
 	if err != nil {
 		log.Error("failed to process message with ai",
 			slog.String("message_id", messageID),
 			slog.Any("error", err),
 		)
-		return p.messageService.MarkFailed(ctx, messageID, err.Error())
+		_ = p.markFailed(ctx, messageID, err.Error())
+		return nil, err
 	}
 
-	if !extraction.Valid {
+	if !response.Valid {
 		log.Info("ai marked message as invalid", slog.String("message_id", messageID))
-		return p.messageService.MarkFailed(ctx, messageID, "ai: input not a valid day activity")
+		_ = p.markFailed(ctx, messageID, "ai: input not a valid day activity")
+		return nil, nil
 	}
 
-	if err = p.activityRepo.CreateActivityLog(ctx, messageID, extraction); err != nil {
-		log.Error("failed to create activity log",
-			slog.String("message_id", messageID),
-			slog.Any("error", err),
-		)
-		return p.messageService.MarkFailed(ctx, messageID, err.Error())
-	}
-
-	return p.messageService.MarkDone(ctx, messageID)
+	return response.Activities, nil
 }
 
-func (s *MessageService) MarkDone(ctx context.Context, messageID string) error {
-	log := logger.From(ctx, s.log)
+// SaveActivities inserts accepted activities and marks the message done.
+func (p *MessageAIProcessor) SaveActivities(ctx context.Context, messageID string, activities []ai.ActivityItem) error {
+	log := logger.From(ctx, p.log)
 
-	if err := s.repo.UpdateMessageStatus(ctx, messageID, messageStatusDone, ""); err != nil {
+	for _, a := range activities {
+		if err := p.activityRepo.CreateActivityLog(ctx, messageID, a); err != nil {
+			log.Error("failed to create activity log",
+				slog.String("message_id", messageID),
+				slog.Any("error", err),
+			)
+			_ = p.markFailed(ctx, messageID, err.Error())
+			return err
+		}
+	}
+
+	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, messageStatusDone, ""); err != nil {
 		log.Error("failed to mark message done",
 			slog.String("message_id", messageID),
 			slog.Any("error", err),
@@ -124,10 +132,15 @@ func (s *MessageService) MarkDone(ctx context.Context, messageID string) error {
 	return nil
 }
 
-func (s *MessageService) MarkFailed(ctx context.Context, messageID, reason string) error {
-	log := logger.From(ctx, s.log)
+// CancelReview marks the message as failed because the user cancelled the review.
+func (p *MessageAIProcessor) CancelReview(ctx context.Context, messageID string) error {
+	return p.markFailed(ctx, messageID, "user cancelled review")
+}
 
-	if err := s.repo.UpdateMessageStatus(ctx, messageID, messageStatusFailed, reason); err != nil {
+func (p *MessageAIProcessor) markFailed(ctx context.Context, messageID, reason string) error {
+	log := logger.From(ctx, p.log)
+
+	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, messageStatusFailed, reason); err != nil {
 		log.Error("failed to mark message failed",
 			slog.String("message_id", messageID),
 			slog.Any("error", err),

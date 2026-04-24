@@ -32,13 +32,18 @@ func New(cfg config.LLMConfig) *Client {
 	}
 }
 
-type ActivityExtraction struct {
-	Valid           bool       `json:"valid"`
+type ActivityItem struct {
 	Description     string     `json:"description"`
 	Tag             string     `json:"tag"`
-	IsUseful        bool       `json:"is_useful"`
+	ActivityType    string     `json:"activity_type"`
 	DurationMinutes *int       `json:"duration_minutes"`
 	StartedAt       *time.Time `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at"`
+}
+
+type ActivityResponse struct {
+	Valid      bool           `json:"valid"`
+	Activities []ActivityItem `json:"activities"`
 }
 
 type chatMessage struct {
@@ -57,9 +62,12 @@ type completionResponse struct {
 	} `json:"choices"`
 }
 
-func (c *Client) ExtractActivity(ctx context.Context, userContext, userMessage string) (ActivityExtraction, error) {
+func (c *Client) ExtractActivity(ctx context.Context, userContext, userMessage string) (ActivityResponse, error) {
+	today := time.Now().UTC().Format("2006-01-02")
+	systemPrompt := activityPrompt + "\n\nToday's date: " + today
+
 	messages := []chatMessage{
-		{Role: "system", Content: activityPrompt},
+		{Role: "system", Content: systemPrompt},
 	}
 	if userContext != "" {
 		messages = append(messages, chatMessage{Role: "user", Content: "My context: " + userContext})
@@ -68,19 +76,19 @@ func (c *Client) ExtractActivity(ctx context.Context, userContext, userMessage s
 
 	body, err := json.Marshal(completionRequest{Model: c.model, Messages: messages})
 	if err != nil {
-		return ActivityExtraction{}, fmt.Errorf("ai: marshal request: %w", err)
+		return ActivityResponse{}, fmt.Errorf("ai: marshal request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return ActivityExtraction{}, fmt.Errorf("ai: build request: %w", err)
+		return ActivityResponse{}, fmt.Errorf("ai: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return ActivityExtraction{}, fmt.Errorf("ai: request failed: %w", err)
+		return ActivityResponse{}, fmt.Errorf("ai: request failed: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -88,22 +96,22 @@ func (c *Client) ExtractActivity(ctx context.Context, userContext, userMessage s
 		}
 	}()
 	if resp.StatusCode != http.StatusOK {
-		return ActivityExtraction{}, fmt.Errorf("ai: unexpected status %d", resp.StatusCode)
+		return ActivityResponse{}, fmt.Errorf("ai: unexpected status %d", resp.StatusCode)
 	}
 
 	var result completionResponse
 	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return ActivityExtraction{}, fmt.Errorf("ai: decode response: %w", err)
+		return ActivityResponse{}, fmt.Errorf("ai: decode response: %w", err)
 	}
 
 	if len(result.Choices) == 0 {
-		return ActivityExtraction{}, fmt.Errorf("ai: empty choices in response")
+		return ActivityResponse{}, fmt.Errorf("ai: empty choices in response")
 	}
 
-	var extraction ActivityExtraction
-	if err = json.Unmarshal([]byte(result.Choices[0].Message.Content), &extraction); err != nil {
-		return ActivityExtraction{}, fmt.Errorf("ai: parse extraction: %w", err)
+	var response ActivityResponse
+	if err = json.Unmarshal([]byte(result.Choices[0].Message.Content), &response); err != nil {
+		return ActivityResponse{}, fmt.Errorf("ai: parse extraction: %w", err)
 	}
 
-	return extraction, nil
+	return response, nil
 }

@@ -38,9 +38,10 @@ CREATE TABLE activity_logs (
                                user_id          UUID        NOT NULL REFERENCES users(id),
                                description      TEXT        NOT NULL,
                                tag              TEXT        NOT NULL,
-                               is_useful        BOOLEAN     NOT NULL,
+                               activity_type    TEXT        NOT NULL CHECK (activity_type IN ('growth', 'routine', 'rest', 'drain')),
                                duration_minutes INT         CHECK (duration_minutes > 0),
                                started_at       TIMESTAMPTZ,  -- intentionally nullable: user may omit
+                               completed_at     TIMESTAMPTZ,  -- intentionally nullable: user may omit
                                deleted_at       TIMESTAMPTZ,
                                created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );

@@ -16,15 +16,15 @@ func NewActivityLogRepo(s *Storage) *ActivityLogRepo {
 	return &ActivityLogRepo{db: s.db}
 }
 
-func (r *ActivityLogRepo) CreateActivityLog(ctx context.Context, messageID string, a ai.ActivityExtraction) error {
+func (r *ActivityLogRepo) CreateActivityLog(ctx context.Context, messageID string, a ai.ActivityItem) error {
 	const op = "storage.postgres.CreateActivityLog"
 
 	_, err := r.db.Exec(ctx, `
-		INSERT INTO activity_logs (message_id, user_id, description, tag, is_useful, duration_minutes, started_at)
-		SELECT $1, m.user_id, $2, $3, $4, $5, $6
+		INSERT INTO activity_logs (message_id, user_id, description, tag, activity_type, duration_minutes, started_at, completed_at)
+		SELECT $1, m.user_id, $2, $3, $4, $5, $6, $7
 		FROM messages m
 		WHERE m.id = $1
-	`, messageID, a.Description, a.Tag, a.IsUseful, a.DurationMinutes, a.StartedAt)
+	`, messageID, a.Description, a.Tag, a.ActivityType, a.DurationMinutes, a.StartedAt, a.CompletedAt)
 	if err != nil {
 		return fmt.Errorf("%s: insert: %w", op, err)
 	}

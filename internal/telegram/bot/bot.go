@@ -26,7 +26,7 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 
 	userService := services.NewUserService(log, userRepo, userRepo)
 	messageService := services.NewMessageService(log, messageRepo)
-	aiProcessor := services.NewMessageAIProcessor(log, aiClient, messageService, userRepo, activityLogRepo)
+	aiProcessor := services.NewMessageAIProcessor(log, aiClient, messageRepo, userRepo, activityLogRepo)
 
 	b := &Bot{
 		log:        log,
@@ -83,6 +83,10 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 	}
 
 	if b.tgHandlers.HandlePendingContextInput(ctx, bot, update) {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingTagInput(ctx, bot, update) {
 		return
 	}
 
