@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 )
 
@@ -20,15 +19,18 @@ type messageService interface {
 }
 
 type messageAIProcessor interface {
-	ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]ai.ActivityItem, error)
-	SaveActivities(ctx context.Context, messageID string, activities []ai.ActivityItem) error
+	ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]domain.Activity, error)
+	SaveActivities(ctx context.Context, messageID string, activities []domain.Activity) error
 	CancelReview(ctx context.Context, messageID string) error
 }
 
+// pendingReview holds the in-progress AI review state for one chat.
+// mu guards activities and editIndex — both are mutated by concurrent handler goroutines.
 type pendingReview struct {
+	mu         sync.Mutex
 	messageID  string
 	identity   domain.Identity
-	activities []ai.ActivityItem
+	activities []domain.Activity
 	editIndex  int // -1 = no activity selected for editing
 }
 

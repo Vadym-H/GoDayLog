@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Vadym-H/GoDayLog/internal/ai"
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,18 +16,26 @@ func NewActivityLogRepo(s *Storage) *ActivityLogRepo {
 	return &ActivityLogRepo{db: s.db}
 }
 
-func (r *ActivityLogRepo) CreateActivityLog(ctx context.Context, messageID string, a ai.ActivityItem) error {
-	const op = "storage.postgres.CreateActivityLog"
+func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID string, items []domain.Activity) error {
+	const op = "storage.postgres.CreateActivityLogs"
 
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO activity_logs (message_id, user_id, description, tag, activity_type, duration_minutes, started_at, completed_at)
-		SELECT $1, m.user_id, $2, $3, $4, $5, $6, $7
-		FROM messages m
-		WHERE m.id = $1
-	`, messageID, a.Description, a.Tag, a.ActivityType, a.DurationMinutes, a.StartedAt, a.CompletedAt)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("%s: insert: %w", op, err)
+		return fmt.Errorf("%s: begin: %w", op, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for _, a := range items {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO activity_logs (message_id, user_id, description, tag, activity_type, duration_minutes, started_at, completed_at)
+			SELECT $1, m.user_id, $2, $3, $4, $5, $6, $7
+			FROM messages m
+			WHERE m.id = $1
+		`, messageID, a.Description, a.Tag, a.ActivityType, a.DurationMinutes, a.StartedAt, a.CompletedAt)
+		if err != nil {
+			return fmt.Errorf("%s: insert: %w", op, err)
+		}
 	}
 
-	return nil
+	return tx.Commit(ctx)
 }

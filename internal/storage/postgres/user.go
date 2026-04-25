@@ -111,3 +111,23 @@ func (r *UserRepo) GetUserContext(ctx context.Context, id domain.Identity) (stri
 
 	return llmContext, nil
 }
+
+func (r *UserRepo) GetUserTimezone(ctx context.Context, id domain.Identity) (string, error) {
+	const op = "storage.postgres.GetUserTimezone"
+
+	var tz string
+	err := r.db.QueryRow(ctx, `
+		SELECT u.timezone
+		FROM users u
+		JOIN user_identities ui ON ui.user_id = u.id
+		WHERE ui.provider = $1 AND ui.external_id = $2 AND u.deleted_at IS NULL
+	`, id.Provider, id.ExternalID).Scan(&tz)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
+		}
+		return "", fmt.Errorf("%s: query timezone: %w", op, err)
+	}
+
+	return tz, nil
+}

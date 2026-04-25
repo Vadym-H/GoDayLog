@@ -43,7 +43,7 @@ func main() {
 	}
 	defer db.Close()
 
-	aiClient := ai.New(cfg.LLM)
+	aiClient := ai.New(log, cfg.LLM)
 
 	tgBot, err := bot.New(cfg.Telegram.Token, log, db, aiClient)
 	if err != nil {

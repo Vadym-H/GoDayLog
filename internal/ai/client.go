@@ -6,11 +6,13 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"log"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/config"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 )
 
 //go:embed prompts/activity.txt
@@ -18,14 +20,16 @@ var activityPrompt string
 
 type Client struct {
 	http    *http.Client
+	log     *slog.Logger
 	baseURL string
 	apiKey  string
 	model   string
 }
 
-func New(cfg config.LLMConfig) *Client {
+func New(log *slog.Logger, cfg config.LLMConfig) *Client {
 	return &Client{
 		http:    &http.Client{Timeout: cfg.Timeout},
+		log:     log,
 		baseURL: cfg.BaseURL,
 		apiKey:  cfg.APIKey,
 		model:   cfg.Model,
@@ -62,8 +66,7 @@ type completionResponse struct {
 	} `json:"choices"`
 }
 
-func (c *Client) ExtractActivity(ctx context.Context, userContext, userMessage string) (ActivityResponse, error) {
-	today := time.Now().UTC().Format("2006-01-02")
+func (c *Client) ExtractActivity(ctx context.Context, today, userContext, userMessage string) (ActivityResponse, error) {
 	systemPrompt := activityPrompt + "\n\nToday's date: " + today
 
 	messages := []chatMessage{
@@ -92,11 +95,13 @@ func (c *Client) ExtractActivity(ctx context.Context, userContext, userMessage s
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("error closing response body: %v", err)
+			logger.From(ctx, c.log).Warn("ai: close response body", slog.Any("error", err))
 		}
 	}()
+
 	if resp.StatusCode != http.StatusOK {
-		return ActivityResponse{}, fmt.Errorf("ai: unexpected status %d", resp.StatusCode)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return ActivityResponse{}, fmt.Errorf("ai: unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(errBody))
 	}
 
 	var result completionResponse

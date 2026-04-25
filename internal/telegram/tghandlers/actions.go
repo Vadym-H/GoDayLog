@@ -16,12 +16,12 @@ import (
 )
 
 const (
-	callbackReviewAccept    = callbackActionPrefix + "review:accept"
-	callbackReviewCancel    = callbackActionPrefix + "review:cancel"
-	callbackReviewModify    = callbackActionPrefix + "review:modify"
-	callbackReviewModifyTag = callbackActionPrefix + "review:modify_tag"
-	callbackReviewModifyType = callbackActionPrefix + "review:modify_type"
-	callbackReviewBack      = callbackActionPrefix + "review:back"
+	callbackReviewAccept        = callbackActionPrefix + "review:accept"
+	callbackReviewCancel        = callbackActionPrefix + "review:cancel"
+	callbackReviewModify        = callbackActionPrefix + "review:modify"
+	callbackReviewModifyTag     = callbackActionPrefix + "review:modify_tag"
+	callbackReviewModifyType    = callbackActionPrefix + "review:modify_type"
+	callbackReviewBack          = callbackActionPrefix + "review:back"
 	callbackReviewPickPrefix    = callbackActionPrefix + "review:pick:"
 	callbackReviewSetTypePrefix = callbackActionPrefix + "review:set_type:"
 )
@@ -151,8 +151,11 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 		if r == nil {
 			return
 		}
+		r.mu.Lock()
 		r.editIndex = -1
-		err = tg.sendReviewMessage(ctx, bot, chatID, r)
+		snapshot := append([]domain.Activity(nil), r.activities...)
+		r.mu.Unlock()
+		err = tg.sendReviewMessage(ctx, bot, chatID, snapshot)
 
 	case strings.HasPrefix(data, callbackReviewPickPrefix):
 		err = tg.handleReviewPick(ctx, bot, chatID, data)
@@ -241,7 +244,7 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 	}
 	tg.setPendingReview(chatID, r)
 
-	if err = tg.sendReviewMessage(ctx, bot, chatID, r); err != nil {
+	if err = tg.sendReviewMessage(ctx, bot, chatID, activities); err != nil {
 		log.Error("failed to send review message", slog.Any("error", err))
 	}
 
@@ -259,11 +262,6 @@ func (tg *TgHandlers) HandlePendingTagInput(ctx context.Context, bot *tgbot.Bot,
 	}
 	log := logger.From(ctx, tg.log)
 
-	r := tg.getPendingReview(chatID)
-	if r == nil || r.editIndex < 0 || r.editIndex >= len(r.activities) {
-		return true
-	}
-
 	tag := strings.ToLower(strings.TrimSpace(update.Message.Text))
 	if tag == "" || strings.HasPrefix(tag, "/") || strings.ContainsAny(tag, " \t\n") {
 		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -277,10 +275,22 @@ func (tg *TgHandlers) HandlePendingTagInput(ctx context.Context, bot *tgbot.Bot,
 		return true
 	}
 
+	r := tg.getPendingReview(chatID)
+	if r == nil {
+		return true
+	}
+
+	r.mu.Lock()
+	if r.editIndex < 0 || r.editIndex >= len(r.activities) {
+		r.mu.Unlock()
+		return true
+	}
 	r.activities[r.editIndex].Tag = tag
 	r.editIndex = -1
+	snapshot := append([]domain.Activity(nil), r.activities...)
+	r.mu.Unlock()
 
-	if err := tg.sendReviewMessage(ctx, bot, chatID, r); err != nil {
+	if err := tg.sendReviewMessage(ctx, bot, chatID, snapshot); err != nil {
 		log.Error("failed to send review message after tag edit", slog.Any("error", err))
 	}
 
@@ -335,7 +345,12 @@ func (tg *TgHandlers) handleReviewAccept(ctx context.Context, bot *tgbot.Bot, ch
 		return nil
 	}
 
-	if err := tg.aiProcessor.SaveActivities(ctx, r.messageID, r.activities); err != nil {
+	r.mu.Lock()
+	messageID := r.messageID
+	activities := append([]domain.Activity(nil), r.activities...)
+	r.mu.Unlock()
+
+	if err := tg.aiProcessor.SaveActivities(ctx, messageID, activities); err != nil {
 		logger.From(ctx, tg.log).Error("failed to save activities", slog.Any("error", err))
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
@@ -383,14 +398,18 @@ func (tg *TgHandlers) handleReviewModify(ctx context.Context, bot *tgbot.Bot, ch
 		return nil
 	}
 
-	if len(r.activities) == 1 {
+	r.mu.Lock()
+	count := len(r.activities)
+	if count == 1 {
 		r.editIndex = 0
-		return tg.sendModifyOptions(ctx, bot, chatID, r, 0)
+		activity := r.activities[0]
+		r.mu.Unlock()
+		return tg.sendModifyOptions(ctx, bot, chatID, activity, 0)
 	}
+	r.mu.Unlock()
 
-	// multiple activities: ask which one
-	rows := make([][]models.InlineKeyboardButton, 0, len(r.activities)+1)
-	for i := range r.activities {
+	rows := make([][]models.InlineKeyboardButton, 0, count+1)
+	for i := 0; i < count; i++ {
 		rows = append(rows, []models.InlineKeyboardButton{
 			{Text: fmt.Sprintf("Activity %d", i+1), CallbackData: callbackReviewPickPrefix + strconv.Itoa(i)},
 		})
@@ -400,8 +419,8 @@ func (tg *TgHandlers) handleReviewModify(ctx context.Context, bot *tgbot.Bot, ch
 	})
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "Which activity do you want to modify?",
+		ChatID:      chatID,
+		Text:        "Which activity do you want to modify?",
 		ReplyMarkup: &models.InlineKeyboardMarkup{InlineKeyboard: rows},
 	})
 	return err
@@ -415,16 +434,23 @@ func (tg *TgHandlers) handleReviewPick(ctx context.Context, bot *tgbot.Bot, chat
 
 	indexStr := strings.TrimPrefix(data, callbackReviewPickPrefix)
 	index, err := strconv.Atoi(indexStr)
-	if err != nil || index < 0 || index >= len(r.activities) {
+	if err != nil {
 		return nil
 	}
 
+	r.mu.Lock()
+	if index < 0 || index >= len(r.activities) {
+		r.mu.Unlock()
+		return nil
+	}
 	r.editIndex = index
-	return tg.sendModifyOptions(ctx, bot, chatID, r, index)
+	activity := r.activities[index]
+	r.mu.Unlock()
+
+	return tg.sendModifyOptions(ctx, bot, chatID, activity, index)
 }
 
-func (tg *TgHandlers) sendModifyOptions(ctx context.Context, bot *tgbot.Bot, chatID int64, r *pendingReview, index int) error {
-	a := r.activities[index]
+func (tg *TgHandlers) sendModifyOptions(ctx context.Context, bot *tgbot.Bot, chatID int64, a domain.Activity, index int) error {
 	text := fmt.Sprintf("Modify activity %d: %q\nTag: %s · Type: %s",
 		index+1, a.Description, a.Tag, a.ActivityType)
 
@@ -451,7 +477,14 @@ func (tg *TgHandlers) sendModifyOptions(ctx context.Context, bot *tgbot.Bot, cha
 
 func (tg *TgHandlers) handleReviewModifyTag(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
 	r := tg.getPendingReview(chatID)
-	if r == nil || r.editIndex < 0 {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	editIdx := r.editIndex
+	r.mu.Unlock()
+	if editIdx < 0 {
 		return nil
 	}
 
@@ -471,7 +504,14 @@ func (tg *TgHandlers) handleReviewModifyTag(ctx context.Context, bot *tgbot.Bot,
 
 func (tg *TgHandlers) handleReviewModifyType(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
 	r := tg.getPendingReview(chatID)
-	if r == nil || r.editIndex < 0 {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	editIdx := r.editIndex
+	r.mu.Unlock()
+	if editIdx < 0 {
 		return nil
 	}
 
@@ -502,7 +542,7 @@ func (tg *TgHandlers) handleReviewModifyType(ctx context.Context, bot *tgbot.Bot
 
 func (tg *TgHandlers) handleReviewSetType(ctx context.Context, bot *tgbot.Bot, chatID int64, data string) error {
 	r := tg.getPendingReview(chatID)
-	if r == nil || r.editIndex < 0 || r.editIndex >= len(r.activities) {
+	if r == nil {
 		return nil
 	}
 
@@ -513,19 +553,26 @@ func (tg *TgHandlers) handleReviewSetType(ctx context.Context, bot *tgbot.Bot, c
 		return nil
 	}
 
+	r.mu.Lock()
+	if r.editIndex < 0 || r.editIndex >= len(r.activities) {
+		r.mu.Unlock()
+		return nil
+	}
 	r.activities[r.editIndex].ActivityType = value
 	r.editIndex = -1
+	snapshot := append([]domain.Activity(nil), r.activities...)
+	r.mu.Unlock()
 
-	return tg.sendReviewMessage(ctx, bot, chatID, r)
+	return tg.sendReviewMessage(ctx, bot, chatID, snapshot)
 }
 
 // --- review message formatting ---
 
-func (tg *TgHandlers) sendReviewMessage(ctx context.Context, bot *tgbot.Bot, chatID int64, r *pendingReview) error {
+func (tg *TgHandlers) sendReviewMessage(ctx context.Context, bot *tgbot.Bot, chatID int64, activities []domain.Activity) error {
 	var sb strings.Builder
 	sb.WriteString("Here is what AI extracted. Review and accept or adjust:\n")
 
-	for i, a := range r.activities {
+	for i, a := range activities {
 		sb.WriteString(fmt.Sprintf("\n%d. %s\n   Tag: %s · Type: %s", i+1, a.Description, a.Tag, a.ActivityType))
 		if a.DurationMinutes != nil {
 			sb.WriteString(" · " + formatDuration(*a.DurationMinutes))

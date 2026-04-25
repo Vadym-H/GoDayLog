@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
@@ -15,15 +16,16 @@ const (
 )
 
 type AIClient interface {
-	ExtractActivity(ctx context.Context, userContext, userMessage string) (ai.ActivityResponse, error)
+	ExtractActivity(ctx context.Context, today, userContext, userMessage string) (ai.ActivityResponse, error)
 }
 
 type UserContextReader interface {
 	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
+	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
 }
 
 type ActivityLogRepository interface {
-	CreateActivityLog(ctx context.Context, messageID string, a ai.ActivityItem) error
+	CreateActivityLogs(ctx context.Context, messageID string, items []domain.Activity) error
 }
 
 type MessageRepository interface {
@@ -75,7 +77,7 @@ func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRep
 
 // ExtractActivities calls AI and returns items for user review.
 // On AI failure or invalid input it marks the message as failed and returns an error.
-func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]ai.ActivityItem, error) {
+func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]domain.Activity, error) {
 	log := logger.From(ctx, p.log)
 
 	userContext, err := p.userCtxReader.GetUserContext(ctx, id)
@@ -87,7 +89,25 @@ func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 		userContext = ""
 	}
 
-	response, err := p.ai.ExtractActivity(ctx, userContext, text)
+	tz, err := p.userCtxReader.GetUserTimezone(ctx, id)
+	if err != nil {
+		log.Warn("could not fetch user timezone, falling back to UTC",
+			slog.String("message_id", messageID),
+			slog.Any("error", err),
+		)
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		log.Warn("invalid timezone in DB, falling back to UTC",
+			slog.String("timezone", tz),
+			slog.Any("error", err),
+		)
+		loc = time.UTC
+	}
+	today := time.Now().In(loc).Format("2006-01-02")
+
+	response, err := p.ai.ExtractActivity(ctx, today, userContext, text)
 	if err != nil {
 		log.Error("failed to process message with ai",
 			slog.String("message_id", messageID),
@@ -103,22 +123,32 @@ func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 		return nil, nil
 	}
 
-	return response.Activities, nil
+	activities := make([]domain.Activity, len(response.Activities))
+	for i, a := range response.Activities {
+		activities[i] = domain.Activity{
+			Description:     a.Description,
+			Tag:             a.Tag,
+			ActivityType:    a.ActivityType,
+			DurationMinutes: a.DurationMinutes,
+			StartedAt:       a.StartedAt,
+			CompletedAt:     a.CompletedAt,
+		}
+	}
+
+	return activities, nil
 }
 
-// SaveActivities inserts accepted activities and marks the message done.
-func (p *MessageAIProcessor) SaveActivities(ctx context.Context, messageID string, activities []ai.ActivityItem) error {
+// SaveActivities inserts accepted activities in a single transaction and marks the message done.
+func (p *MessageAIProcessor) SaveActivities(ctx context.Context, messageID string, activities []domain.Activity) error {
 	log := logger.From(ctx, p.log)
 
-	for _, a := range activities {
-		if err := p.activityRepo.CreateActivityLog(ctx, messageID, a); err != nil {
-			log.Error("failed to create activity log",
-				slog.String("message_id", messageID),
-				slog.Any("error", err),
-			)
-			_ = p.markFailed(ctx, messageID, err.Error())
-			return err
-		}
+	if err := p.activityRepo.CreateActivityLogs(ctx, messageID, activities); err != nil {
+		log.Error("failed to create activity logs",
+			slog.String("message_id", messageID),
+			slog.Any("error", err),
+		)
+		_ = p.markFailed(ctx, messageID, err.Error())
+		return err
 	}
 
 	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, messageStatusDone, ""); err != nil {
