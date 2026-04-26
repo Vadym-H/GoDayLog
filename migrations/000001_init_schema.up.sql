@@ -77,3 +77,18 @@ CREATE INDEX idx_users_deleted_at
 
 CREATE INDEX idx_activity_logs_deleted_at
     ON activity_logs(deleted_at) WHERE deleted_at IS NULL;
+
+-- AI REQUEST LOGS
+CREATE TABLE ai_request_logs (
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID        NOT NULL REFERENCES users(id),
+    message_id        UUID        NOT NULL REFERENCES messages(id),
+    prompt_tokens     INT         NOT NULL,
+    completion_tokens INT         NOT NULL,
+    total_tokens      INT         NOT NULL,
+    model             TEXT        NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_ai_request_logs_user_created
+    ON ai_request_logs(user_id, created_at);

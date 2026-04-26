@@ -23,10 +23,11 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	userRepo := storage.NewUserRepo(db)
 	messageRepo := storage.NewMessageRepo(db)
 	activityLogRepo := storage.NewActivityLogRepo(db)
+	aiRequestLogRepo := storage.NewAIRequestLogRepo(db)
 
 	userService := services.NewUserService(log, userRepo, userRepo)
 	messageService := services.NewMessageService(log, messageRepo)
-	aiProcessor := services.NewMessageAIProcessor(log, aiClient, messageRepo, userRepo, activityLogRepo)
+	aiProcessor := services.NewMessageAIProcessor(log, aiClient, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo)
 
 	b := &Bot{
 		log:        log,

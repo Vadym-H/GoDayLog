@@ -45,9 +45,17 @@ type ActivityItem struct {
 	CompletedAt     *time.Time `json:"completed_at"`
 }
 
+type TokenUsage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
 type ActivityResponse struct {
 	Valid      bool           `json:"valid"`
 	Activities []ActivityItem `json:"activities"`
+	Usage      TokenUsage
+	Model      string
 }
 
 type chatMessage struct {
@@ -64,6 +72,11 @@ type completionResponse struct {
 	Choices []struct {
 		Message chatMessage `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func (c *Client) ExtractActivity(ctx context.Context, today, userContext, userMessage string) (ActivityResponse, error) {
@@ -109,14 +122,22 @@ func (c *Client) ExtractActivity(ctx context.Context, today, userContext, userMe
 		return ActivityResponse{}, fmt.Errorf("ai: decode response: %w", err)
 	}
 
+	usage := TokenUsage{
+		PromptTokens:     result.Usage.PromptTokens,
+		CompletionTokens: result.Usage.CompletionTokens,
+		TotalTokens:      result.Usage.TotalTokens,
+	}
+
 	if len(result.Choices) == 0 {
-		return ActivityResponse{}, fmt.Errorf("ai: empty choices in response")
+		return ActivityResponse{Usage: usage, Model: c.model}, fmt.Errorf("ai: empty choices in response")
 	}
 
 	var response ActivityResponse
 	if err = json.Unmarshal([]byte(result.Choices[0].Message.Content), &response); err != nil {
-		return ActivityResponse{}, fmt.Errorf("ai: parse extraction: %w", err)
+		return ActivityResponse{Usage: usage, Model: c.model}, fmt.Errorf("ai: parse extraction: %w", err)
 	}
 
+	response.Usage = usage
+	response.Model = c.model
 	return response, nil
 }
