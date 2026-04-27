@@ -26,7 +26,7 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	activityLogRepo := storage.NewActivityLogRepo(db)
 	aiRequestLogRepo := storage.NewAIRequestLogRepo(db)
 
-	userService := services.NewUserService(log, userRepo, userRepo)
+	userService := services.NewUserService(log, userRepo, userRepo, limits)
 	messageService := services.NewMessageService(log, messageRepo)
 	limiter := ai.NewLimiterMiddleware(aiClient, log, limits)
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)

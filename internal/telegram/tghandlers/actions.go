@@ -3,6 +3,7 @@ package tghandlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
+	"github.com/Vadym-H/GoDayLog/internal/services"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -314,9 +316,14 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
 	err := tg.userService.UpdateUserContext(ctx, identity, text)
 	if err != nil {
+		replyText := "Could not save your context right now. Please try again."
+		var ctxErr *services.ErrContextTooLong
+		if errors.As(err, &ctxErr) {
+			replyText = fmt.Sprintf("Your context is too long (%d characters). Please shorten it to %d characters or less.", ctxErr.Len, ctxErr.Limit)
+		}
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "Could not save your context right now. Please try again.",
+			Text:   replyText,
 		})
 		if sendErr != nil {
 			log.Error("failed to send context save error", slog.Any("error", sendErr))

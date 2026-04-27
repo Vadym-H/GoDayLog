@@ -3,12 +3,23 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/config"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 )
+
+type ErrContextTooLong struct {
+	Len   int
+	Limit int
+}
+
+func (e *ErrContextTooLong) Error() string {
+	return fmt.Sprintf("user context too long: %d chars, limit %d", e.Len, e.Limit)
+}
 
 type UserCreator interface {
 	CreateUser(ctx context.Context, id domain.Identity) (string, bool, error)
@@ -22,10 +33,11 @@ type UserService struct {
 	log     *slog.Logger
 	repo    UserCreator
 	userctx UserContext
+	limits  config.LLMUsageLimits
 }
 
-func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext) *UserService {
-	return &UserService{log: log, repo: repo, userctx: userctx}
+func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext, limits config.LLMUsageLimits) *UserService {
+	return &UserService{log: log, repo: repo, userctx: userctx, limits: limits}
 }
 
 // RegisterUser registers an external identity and backing user.
@@ -51,6 +63,10 @@ func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (str
 
 func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
 	log := logger.From(ctx, s.log)
+
+	if s.limits.Enabled && s.limits.MaxContextChars > 0 && len(llmContext) > s.limits.MaxContextChars {
+		return &ErrContextTooLong{Len: len(llmContext), Limit: s.limits.MaxContextChars}
+	}
 
 	if err := s.userctx.UpdateUserContext(ctx, id, llmContext); err != nil {
 		log.Error("failed to update user context", slog.Any("error", err))

@@ -20,6 +20,7 @@ llm:
     enabled: true          # false in local.yaml, true in prod.yaml
     max_input_tokens: 1000  # reject before the HTTP call
     daily_budget_tokens: 3000
+    max_context_chars: 700
 server:
   address: ":8080"
   timeout: 4s

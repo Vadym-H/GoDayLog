@@ -44,9 +44,10 @@ type LLMConfig struct {
 }
 
 type LLMUsageLimits struct {
-	Enabled            bool `yaml:"enabled" env:"LLM_LIMITS_ENABLED" env-default:"false"`
-	MaxInputTokens     int  `yaml:"max_input_tokens" env:"LLM_LIMITS_MAX_INPUT_TOKENS" env-default:"2000"`
-	DailyBudgetTokens  int  `yaml:"daily_budget_tokens" env:"LLM_LIMITS_DAILY_BUDGET_TOKENS" env-default:"0"`
+	Enabled           bool `yaml:"enabled" env:"LLM_LIMITS_ENABLED" env-default:"false"`
+	MaxInputTokens    int  `yaml:"max_input_tokens" env:"LLM_LIMITS_MAX_INPUT_TOKENS" env-default:"2000"`
+	DailyBudgetTokens int  `yaml:"daily_budget_tokens" env:"LLM_LIMITS_DAILY_BUDGET_TOKENS" env-default:"0"`
+	MaxContextChars   int  `yaml:"max_context_chars" env:"LLM_LIMITS_MAX_CONTEXT_CHARS" env-default:"0"`
 }
 
 type HTTPServer struct {
