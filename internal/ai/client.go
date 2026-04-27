@@ -24,6 +24,7 @@ type Client struct {
 	baseURL string
 	apiKey  string
 	model   string
+	limits  config.LLMUsageLimits
 }
 
 func New(log *slog.Logger, cfg config.LLMConfig) *Client {
@@ -33,6 +34,7 @@ func New(log *slog.Logger, cfg config.LLMConfig) *Client {
 		baseURL: cfg.BaseURL,
 		apiKey:  cfg.APIKey,
 		model:   cfg.Model,
+		limits:  cfg.LLMLimits,
 	}
 }
 
@@ -89,6 +91,15 @@ func (c *Client) ExtractActivity(ctx context.Context, today, userContext, userMe
 		messages = append(messages, chatMessage{Role: "user", Content: "My context: " + userContext})
 	}
 	messages = append(messages, chatMessage{Role: "user", Content: userMessage})
+
+	if c.limits.Enabled && c.limits.MaxInputTokens > 0 {
+		// chars/4 is a fast approximation; intentionally avoids a tokeniser dependency
+		estimate := (len(systemPrompt) + len(userContext) + len(userMessage)) / 4
+		logger.From(ctx, c.log).Debug("token estimate for input messages", slog.Int("estimate", estimate))
+		if estimate > c.limits.MaxInputTokens {
+			return ActivityResponse{}, ErrInputTooLong
+		}
+	}
 
 	body, err := json.Marshal(completionRequest{Model: c.model, Messages: messages})
 	if err != nil {
