@@ -14,9 +14,12 @@ database:
 llm:
   provider: "openai"
   api_key: ""    # set via .env
-  model: "gpt-3.5-turbo"
+  model: "gpt-5.4-mini"
   timeout: 30s
-
+  limits:
+    enabled: true          # false in local.yaml, true in prod.yaml
+    max_input_tokens: 1000  # reject before the HTTP call
+    daily_budget_tokens: 3000
 server:
   address: ":8080"
   timeout: 4s

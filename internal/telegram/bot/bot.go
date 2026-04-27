@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
+	"github.com/Vadym-H/GoDayLog/internal/config"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/services"
 	storage "github.com/Vadym-H/GoDayLog/internal/storage/postgres"
@@ -19,7 +20,7 @@ type Bot struct {
 	tgHandlers *tghandlers.TgHandlers
 }
 
-func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client) (*Bot, error) {
+func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client, limits config.LLMUsageLimits) (*Bot, error) {
 	userRepo := storage.NewUserRepo(db)
 	messageRepo := storage.NewMessageRepo(db)
 	activityLogRepo := storage.NewActivityLogRepo(db)
@@ -27,7 +28,7 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 
 	userService := services.NewUserService(log, userRepo, userRepo)
 	messageService := services.NewMessageService(log, messageRepo)
-	aiProcessor := services.NewMessageAIProcessor(log, aiClient, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo)
+	aiProcessor := services.NewMessageAIProcessor(log, aiClient, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)
 
 	b := &Bot{
 		log:        log,

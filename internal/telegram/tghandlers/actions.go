@@ -2,10 +2,12 @@ package tghandlers
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
 
+	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 	tgbot "github.com/go-telegram/bot"
@@ -197,10 +199,19 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 
 	activities, err := tg.aiProcessor.ExtractActivities(ctx, identity, messageID, text)
 	if err != nil {
-		log.Error("ai extraction failed", slog.String("message_id", messageID), slog.Any("error", err))
+		var replyText string
+		switch {
+		case errors.Is(err, ai.ErrInputTooLong):
+			replyText = "Your message is too long to process. Please shorten it and try again."
+		case errors.Is(err, ai.ErrDailyBudgetExceeded):
+			replyText = "You have reached your daily AI usage limit. Try again tomorrow."
+		default:
+			log.Error("ai extraction failed", slog.String("message_id", messageID), slog.Any("error", err))
+			replyText = "Could not classify your activity right now. Please try again."
+		}
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "Could not classify your activity right now. Please try again.",
+			Text:   replyText,
 		})
 		if sendErr != nil {
 			log.Error("failed to send extraction error", slog.Any("error", sendErr))

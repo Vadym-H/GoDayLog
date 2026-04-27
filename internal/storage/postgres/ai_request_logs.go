@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,6 +15,22 @@ type AIRequestLogRepo struct {
 
 func NewAIRequestLogRepo(s *Storage) *AIRequestLogRepo {
 	return &AIRequestLogRepo{db: s.db}
+}
+
+func (r *AIRequestLogRepo) SumTokensSince(ctx context.Context, userID string, since time.Time) (int, error) {
+	const op = "storage.postgres.SumTokensSince"
+
+	var total int
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(total_tokens), 0)
+		FROM ai_request_logs
+		WHERE user_id = $1 AND created_at >= $2
+	`, userID, since).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return total, nil
 }
 
 func (r *AIRequestLogRepo) CreateAIRequestLog(ctx context.Context, messageID, model string, usage ai.TokenUsage) error {
