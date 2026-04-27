@@ -90,26 +90,26 @@ func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 	now := time.Now().In(loc)
 	today := now.Format("2006-01-02")
 
-	//if p.limits.Enabled && p.limits.DailyBudgetTokens > 0 {
-	//	userID, idErr := p.userCtxReader.GetUserID(ctx, id)
-	//	if idErr != nil {
-	//		log.Warn("could not fetch user id for budget check, skipping",
-	//			slog.String("message_id", messageID),
-	//			slog.Any("error", idErr),
-	//		)
-	//	} else {
-	//		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	//		used, sumErr := p.aiLogRepo.SumTokensSince(ctx, userID, dayStart)
-	//		if sumErr != nil {
-	//			log.Warn("could not sum daily tokens, skipping budget check",
-	//				slog.String("message_id", messageID),
-	//				slog.Any("error", sumErr),
-	//			)
-	//		} else if used >= p.limits.DailyBudgetTokens {
-	//			return nil, ai.ErrDailyBudgetExceeded
-	//		}
-	//	}
-	//}
+	if p.limits.Enabled && p.limits.DailyBudgetTokens > 0 {
+		userID, idErr := p.userCtxReader.GetUserID(ctx, id)
+		if idErr != nil {
+			log.Warn("could not fetch user id for budget check, skipping",
+				slog.String("message_id", messageID),
+				slog.Any("error", idErr),
+			)
+		} else {
+			dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+			used, sumErr := p.aiLogRepo.SumTokensSince(ctx, userID, dayStart)
+			if sumErr != nil {
+				log.Warn("could not sum daily tokens, skipping budget check",
+					slog.String("message_id", messageID),
+					slog.Any("error", sumErr),
+				)
+			} else if used >= p.limits.DailyBudgetTokens {
+				return nil, ai.ErrDailyBudgetExceeded
+			}
+		}
+	}
 
 	response, err := p.ai.ExtractActivity(ctx, today, userContext, text)
 	if response.Usage.TotalTokens > 0 {
