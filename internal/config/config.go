@@ -35,10 +35,19 @@ type Database struct {
 }
 
 type LLMConfig struct {
-	Provider string        `yaml:"provider" env:"LLM_PROVIDER" env-default:"openai"`
-	Model    string        `yaml:"model" env:"LLM_MODEL" env-default:"gpt-3.5-turbo"`
-	Timeout  time.Duration `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
-	APIKey   string        `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`
+	Provider  string         `yaml:"provider" env:"LLM_PROVIDER" env-default:"openai"`
+	BaseURL   string         `yaml:"base_url" env:"LLM_BASE_URL" env-default:"https://api.openai.com/v1"`
+	Model     string         `yaml:"model" env:"LLM_MODEL" env-default:"gpt-3.5-turbo"`
+	Timeout   time.Duration  `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
+	APIKey    string         `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`
+	LLMLimits LLMUsageLimits `yaml:"limits"`
+}
+
+type LLMUsageLimits struct {
+	Enabled           bool `yaml:"enabled" env:"LLM_LIMITS_ENABLED" env-default:"false"`
+	MaxInputTokens    int  `yaml:"max_input_tokens" env:"LLM_LIMITS_MAX_INPUT_TOKENS" env-default:"2000"`
+	DailyBudgetTokens int  `yaml:"daily_budget_tokens" env:"LLM_LIMITS_DAILY_BUDGET_TOKENS" env-default:"0"`
+	MaxContextChars   int  `yaml:"max_context_chars" env:"LLM_LIMITS_MAX_CONTEXT_CHARS" env-default:"0"`
 }
 
 type HTTPServer struct {

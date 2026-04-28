@@ -3,13 +3,15 @@ package tghandlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
 
+	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
-	"github.com/Vadym-H/GoDayLog/internal/storage"
+	"github.com/Vadym-H/GoDayLog/internal/services"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -74,29 +76,35 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 	}
 
 	chatID := update.CallbackQuery.Message.Message.Chat.ID
+	data := update.CallbackQuery.Data
 
-	switch update.CallbackQuery.Data {
-	case callbackLogActivity:
+	switch {
+	case data == callbackLogActivity:
 		tg.clearAwaitingContext(chatID)
 		tg.setAwaitingLog(chatID)
 		err = tg.sendLogPrompt(ctx, bot, chatID)
-	case callbackTodayStats:
+
+	case data == callbackTodayStats:
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
 		err = tg.sendTodayStats(ctx, bot, chatID)
-	case callbackHelp:
+
+	case data == callbackHelp:
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
 		err = tg.sendHelp(ctx, bot, chatID)
-	case callbackHome:
+
+	case data == callbackHome:
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
 		err = tg.sendHomeMenu(ctx, bot, chatID)
-	case callbackUpdateContext:
+
+	case data == callbackUpdateContext:
 		tg.clearAwaitingLog(chatID)
 		tg.setAwaitingContext(chatID)
 		err = tg.sendContextPrompt(ctx, bot, chatID)
-	case callbackCancelLog:
+
+	case data == callbackCancelLog:
 		if !tg.isAwaitingLog(chatID) {
 			return
 		}
@@ -105,14 +113,45 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 			ChatID: chatID,
 			Text:   "Log activity canceled.",
 		})
-	case callbackSkipContext:
+
+	case data == callbackSkipContext:
 		if !tg.isAwaitingContext(chatID) {
 			return
 		}
 		tg.clearAwaitingContext(chatID)
 		err = tg.finishSkippedContextFlow(ctx, bot, chatID)
-	default:
-		err = nil
+
+	case data == callbackReviewAccept:
+		err = tg.handleReviewAccept(ctx, bot, chatID)
+
+	case data == callbackReviewCancel:
+		err = tg.handleReviewCancel(ctx, bot, chatID)
+
+	case data == callbackReviewModify:
+		err = tg.handleReviewModify(ctx, bot, chatID)
+
+	case data == callbackReviewModifyTag:
+		err = tg.handleReviewModifyTag(ctx, bot, chatID)
+
+	case data == callbackReviewModifyType:
+		err = tg.handleReviewModifyType(ctx, bot, chatID)
+
+	case data == callbackReviewBack:
+		r := tg.getPendingReview(chatID)
+		if r == nil {
+			return
+		}
+		r.mu.Lock()
+		r.editIndex = -1
+		snapshot := append([]domain.Activity(nil), r.activities...)
+		r.mu.Unlock()
+		err = tg.sendReviewMessage(ctx, bot, chatID, snapshot)
+
+	case strings.HasPrefix(data, callbackReviewPickPrefix):
+		err = tg.handleReviewPick(ctx, bot, chatID, data)
+
+	case strings.HasPrefix(data, callbackReviewSetTypePrefix):
+		err = tg.handleReviewSetType(ctx, bot, chatID, data)
 	}
 
 	if err != nil {
@@ -136,7 +175,7 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		tg.setAwaitingLog(chatID)
 		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID:      chatID,
-			Text:        "Please describe what you did today or cancel the log activity.",
+			Text:        "Please describe what you did today or cancel.",
 			ReplyMarkup: cancelLogMarkup(),
 		})
 		if err != nil {
@@ -148,24 +187,109 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
 	externalMessageID := strconv.Itoa(update.Message.ID)
 
-	_, err := tg.messageService.SaveMessage(ctx, identity, externalMessageID, text)
+	messageID, err := tg.messageService.SaveMessage(ctx, identity, externalMessageID, text)
 	if err != nil {
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Could not save your activity right now. Please try again.",
 		})
 		if sendErr != nil {
-			log.Error("failed to send activity save error", slog.Any("error", sendErr))
+			log.Error("failed to send save error", slog.Any("error", sendErr))
 		}
 		return true
 	}
 
-	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "Your activity was saved.",
-	})
+	activities, err := tg.aiProcessor.ExtractActivities(ctx, identity, messageID, text)
 	if err != nil {
-		log.Error("failed to send activity saved confirmation", slog.Any("error", err))
+		var replyText string
+		switch {
+		case errors.Is(err, ai.ErrInputTooLong):
+			tg.setAwaitingLog(chatID)
+			replyText = "Your message is too long to process. Please shorten it and try again."
+		case errors.Is(err, ai.ErrDailyBudgetExceeded):
+			replyText = "You have reached your daily AI usage limit. Try again tomorrow."
+		default:
+			tg.setAwaitingLog(chatID)
+			log.Error("ai extraction failed", slog.String("message_id", messageID), slog.Any("error", err))
+			replyText = "Could not classify your activity right now. Please try again."
+		}
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   replyText,
+		})
+		if sendErr != nil {
+			log.Error("failed to send extraction error", slog.Any("error", sendErr))
+		}
+		return true
+	}
+
+	if activities == nil {
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Your message does not look like a day activity. Please describe something you actually did.",
+		})
+		if sendErr != nil {
+			log.Error("failed to send invalid activity message", slog.Any("error", sendErr))
+		}
+		return true
+	}
+
+	r := &pendingReview{
+		messageID:  messageID,
+		identity:   identity,
+		activities: activities,
+		editIndex:  -1,
+	}
+	tg.setPendingReview(chatID, r)
+
+	if err = tg.sendReviewMessage(ctx, bot, chatID, activities); err != nil {
+		log.Error("failed to send review message", slog.Any("error", err))
+	}
+
+	return true
+}
+
+func (tg *TgHandlers) HandlePendingTagInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
+	if update.Message == nil {
+		return false
+	}
+
+	chatID := update.Message.Chat.ID
+	if !tg.consumeAwaitingTag(chatID) {
+		return false
+	}
+	log := logger.From(ctx, tg.log)
+
+	tag := strings.ToLower(strings.TrimSpace(update.Message.Text))
+	if tag == "" || strings.HasPrefix(tag, "/") || strings.ContainsAny(tag, " \t\n") {
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Tag must be a single lowercase word. Try again.",
+		})
+		tg.setAwaitingTag(chatID)
+		if err != nil {
+			log.Error("failed to ask for tag again", slog.Any("error", err))
+		}
+		return true
+	}
+
+	r := tg.getPendingReview(chatID)
+	if r == nil {
+		return true
+	}
+
+	r.mu.Lock()
+	if r.editIndex < 0 || r.editIndex >= len(r.activities) {
+		r.mu.Unlock()
+		return true
+	}
+	r.activities[r.editIndex].Tag = tag
+	r.editIndex = -1
+	snapshot := append([]domain.Activity(nil), r.activities...)
+	r.mu.Unlock()
+
+	if err := tg.sendReviewMessage(ctx, bot, chatID, snapshot); err != nil {
+		log.Error("failed to send review message after tag edit", slog.Any("error", err))
 	}
 
 	return true
@@ -194,9 +318,14 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
 	err := tg.userService.UpdateUserContext(ctx, identity, text)
 	if err != nil {
+		replyText := "Could not save your context right now. Please try again."
+		var ctxErr *services.ErrContextTooLong
+		if errors.As(err, &ctxErr) {
+			replyText = fmt.Sprintf("Your context is too long (%d characters). Please shorten it to %d characters or less.", ctxErr.Len, ctxErr.Limit)
+		}
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "Could not save your context right now. Please try again.",
+			Text:   replyText,
 		})
 		if sendErr != nil {
 			log.Error("failed to send context save error", slog.Any("error", sendErr))
@@ -209,110 +338,4 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 	}
 
 	return true
-}
-
-func cancelLogMarkup() *models.InlineKeyboardMarkup {
-	return &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Cancel", CallbackData: callbackCancelLog},
-			},
-		},
-	}
-}
-
-func (tg *TgHandlers) sendLogPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        "Please describe what you did today or cancel the log activity.",
-		ReplyMarkup: cancelLogMarkup(),
-	})
-	return err
-}
-
-func (tg *TgHandlers) sendTodayStats(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	markup := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Refresh", CallbackData: callbackTodayStats},
-			},
-			{
-				{Text: "Home", CallbackData: callbackHome},
-			},
-		},
-	}
-
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        "Today: 0 activities logged.\nUseful: 0%.\nTop tags: n/a.",
-		ReplyMarkup: markup,
-	})
-	return err
-}
-
-func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	markup := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Home", CallbackData: callbackHome},
-			},
-		},
-	}
-
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        "Use /start to open the home screen.\nUse /log to submit activity text.\nUse /stats for today's overview.\nUse the Home menu to update your AI context.",
-		ReplyMarkup: markup,
-	})
-	return err
-}
-
-func (tg *TgHandlers) sendContextPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
-	currentContext, err := tg.userService.GetUserContext(ctx, identity)
-	if err != nil && !errors.Is(err, storage.ErrUserNotFound) {
-		// non-fatal: proceed without showing current context
-	}
-
-	text := "To personalize activity insights, please share a short context about you: your routine, priorities, and what feels useful (for example: work focus, fitness, study, family, or wellbeing)." +
-		"\n\nA few lines are enough. This helps the AI better understand which activities matter for you most."
-
-	if currentContext != "" {
-		text += "\n\nYour current context: " + currentContext
-	}
-
-	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID: chatID,
-		Text:   text,
-		ReplyMarkup: &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
-			{Text: "Skip", CallbackData: callbackSkipContext},
-		}}},
-	})
-	return err
-}
-
-func (tg *TgHandlers) finishSkippedContextFlow(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "Got it. You can share your context later anytime.",
-	})
-	if err != nil {
-		return err
-	}
-
-	return tg.sendHomeMenu(ctx, bot, chatID)
-}
-
-func (tg *TgHandlers) finishSavedContextFlow(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "Thanks! Your context is saved and will be used to personalize insights.",
-	})
-	if err != nil {
-		return err
-	}
-
-	return tg.sendHomeMenu(ctx, bot, chatID)
 }

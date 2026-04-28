@@ -38,9 +38,10 @@ CREATE TABLE activity_logs (
                                user_id          UUID        NOT NULL REFERENCES users(id),
                                description      TEXT        NOT NULL,
                                tag              TEXT        NOT NULL,
-                               is_useful        BOOLEAN     NOT NULL,
-                               duration_minutes INT         NOT NULL CHECK (duration_minutes > 0),
+                               activity_type    TEXT        NOT NULL CHECK (activity_type IN ('growth', 'routine', 'rest', 'drain')),
+                               duration_minutes INT         CHECK (duration_minutes > 0),
                                started_at       TIMESTAMPTZ,  -- intentionally nullable: user may omit
+                               completed_at     TIMESTAMPTZ,  -- intentionally nullable: user may omit
                                deleted_at       TIMESTAMPTZ,
                                created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -76,3 +77,18 @@ CREATE INDEX idx_users_deleted_at
 
 CREATE INDEX idx_activity_logs_deleted_at
     ON activity_logs(deleted_at) WHERE deleted_at IS NULL;
+
+-- AI REQUEST LOGS
+CREATE TABLE ai_request_logs (
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID        NOT NULL REFERENCES users(id),
+    message_id        UUID        NOT NULL REFERENCES messages(id),
+    prompt_tokens     INT         NOT NULL,
+    completion_tokens INT         NOT NULL,
+    total_tokens      INT         NOT NULL,
+    model             TEXT        NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_ai_request_logs_user_created
+    ON ai_request_logs(user_id, created_at);

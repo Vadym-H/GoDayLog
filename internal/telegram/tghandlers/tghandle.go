@@ -18,22 +18,45 @@ type messageService interface {
 	SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error)
 }
 
+type messageAIProcessor interface {
+	ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]domain.Activity, error)
+	SaveActivities(ctx context.Context, messageID string, activities []domain.Activity) error
+	CancelReview(ctx context.Context, messageID string) error
+}
+
+// pendingReview holds the in-progress AI review state for one chat.
+// mu guards activities and editIndex — both are mutated by concurrent handler goroutines.
+type pendingReview struct {
+	mu         sync.Mutex
+	messageID  string
+	identity   domain.Identity
+	activities []domain.Activity
+	editIndex  int // -1 = no activity selected for editing
+}
+
 type TgHandlers struct {
 	log            *slog.Logger
 	userService    userService
 	messageService messageService
-	pendingMu      sync.RWMutex
-	pendingLog     map[int64]struct{}
-	pendingLlmCtx  map[int64]struct{}
+	aiProcessor    messageAIProcessor
+
+	pendingMu     sync.RWMutex
+	pendingLog    map[int64]struct{}
+	pendingLlmCtx map[int64]struct{}
+	pendingReview map[int64]*pendingReview
+	awaitingTag   map[int64]struct{}
 }
 
-func New(log *slog.Logger, userService userService, messageService messageService) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor) *TgHandlers {
 	return &TgHandlers{
 		log:            log,
 		userService:    userService,
 		messageService: messageService,
+		aiProcessor:    aiProcessor,
 		pendingLog:     make(map[int64]struct{}),
 		pendingLlmCtx:  make(map[int64]struct{}),
+		pendingReview:  make(map[int64]*pendingReview),
+		awaitingTag:    make(map[int64]struct{}),
 	}
 }
 
@@ -46,11 +69,9 @@ func (tg *TgHandlers) setAwaitingLog(chatID int64) {
 func (tg *TgHandlers) consumeAwaitingLog(chatID int64) bool {
 	tg.pendingMu.Lock()
 	defer tg.pendingMu.Unlock()
-
 	if _, ok := tg.pendingLog[chatID]; !ok {
 		return false
 	}
-
 	delete(tg.pendingLog, chatID)
 	return true
 }
@@ -64,7 +85,6 @@ func (tg *TgHandlers) clearAwaitingLog(chatID int64) {
 func (tg *TgHandlers) isAwaitingLog(chatID int64) bool {
 	tg.pendingMu.RLock()
 	defer tg.pendingMu.RUnlock()
-
 	_, ok := tg.pendingLog[chatID]
 	return ok
 }
@@ -78,11 +98,9 @@ func (tg *TgHandlers) setAwaitingContext(chatID int64) {
 func (tg *TgHandlers) consumeAwaitingContext(chatID int64) bool {
 	tg.pendingMu.Lock()
 	defer tg.pendingMu.Unlock()
-
 	if _, ok := tg.pendingLlmCtx[chatID]; !ok {
 		return false
 	}
-
 	delete(tg.pendingLlmCtx, chatID)
 	return true
 }
@@ -96,7 +114,46 @@ func (tg *TgHandlers) clearAwaitingContext(chatID int64) {
 func (tg *TgHandlers) isAwaitingContext(chatID int64) bool {
 	tg.pendingMu.RLock()
 	defer tg.pendingMu.RUnlock()
-
 	_, ok := tg.pendingLlmCtx[chatID]
 	return ok
+}
+
+func (tg *TgHandlers) setPendingReview(chatID int64, r *pendingReview) {
+	tg.pendingMu.Lock()
+	tg.pendingReview[chatID] = r
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) getPendingReview(chatID int64) *pendingReview {
+	tg.pendingMu.RLock()
+	defer tg.pendingMu.RUnlock()
+	return tg.pendingReview[chatID]
+}
+
+func (tg *TgHandlers) clearPendingReview(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.pendingReview, chatID)
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) setAwaitingTag(chatID int64) {
+	tg.pendingMu.Lock()
+	tg.awaitingTag[chatID] = struct{}{}
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) consumeAwaitingTag(chatID int64) bool {
+	tg.pendingMu.Lock()
+	defer tg.pendingMu.Unlock()
+	if _, ok := tg.awaitingTag[chatID]; !ok {
+		return false
+	}
+	delete(tg.awaitingTag, chatID)
+	return true
+}
+
+func (tg *TgHandlers) clearAwaitingTag(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.awaitingTag, chatID)
+	tg.pendingMu.Unlock()
 }

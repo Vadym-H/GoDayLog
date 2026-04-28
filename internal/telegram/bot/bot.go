@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/ai"
+	"github.com/Vadym-H/GoDayLog/internal/config"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/services"
 	storage "github.com/Vadym-H/GoDayLog/internal/storage/postgres"
@@ -18,16 +20,20 @@ type Bot struct {
 	tgHandlers *tghandlers.TgHandlers
 }
 
-func New(token string, log *slog.Logger, db *storage.Storage) (*Bot, error) {
+func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client, limits config.LLMUsageLimits) (*Bot, error) {
 	userRepo := storage.NewUserRepo(db)
 	messageRepo := storage.NewMessageRepo(db)
+	activityLogRepo := storage.NewActivityLogRepo(db)
+	aiRequestLogRepo := storage.NewAIRequestLogRepo(db)
 
-	userService := services.NewUserService(log, userRepo, userRepo)
+	userService := services.NewUserService(log, userRepo, userRepo, limits)
 	messageService := services.NewMessageService(log, messageRepo)
+	limiter := ai.NewLimiterMiddleware(aiClient, log, limits)
+	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)
 
 	b := &Bot{
 		log:        log,
-		tgHandlers: tghandlers.New(log, userService, messageService),
+		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor),
 	}
 
 	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.withRequestID(b.handleMessage)))
@@ -80,6 +86,10 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 	}
 
 	if b.tgHandlers.HandlePendingContextInput(ctx, bot, update) {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingTagInput(ctx, bot, update) {
 		return
 	}
 

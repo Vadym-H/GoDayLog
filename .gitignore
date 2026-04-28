@@ -30,3 +30,5 @@ Dockerfile.dev
 !README.md
 
 /docs
+.claude
+.mcp.json

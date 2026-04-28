@@ -8,11 +8,6 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 )
 
-const (
-	messageStatusDone   = "done"
-	messageStatusFailed = "failed"
-)
-
 type MessageRepository interface {
 	SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error)
 	UpdateMessageStatus(ctx context.Context, messageID, status, statusError string) error
@@ -38,35 +33,8 @@ func (s *MessageService) SaveMessage(ctx context.Context, id domain.Identity, ex
 	}
 
 	log.Info("message saved", slog.String("message_id", messageID))
+
 	return messageID, nil
-}
-
-func (s *MessageService) MarkDone(ctx context.Context, messageID string) error {
-	log := logger.From(ctx, s.log)
-
-	if err := s.repo.UpdateMessageStatus(ctx, messageID, messageStatusDone, ""); err != nil {
-		log.Error("failed to mark message done",
-			slog.String("message_id", messageID),
-			slog.Any("error", err),
-		)
-		return err
-	}
-
-	return nil
-}
-
-func (s *MessageService) MarkFailed(ctx context.Context, messageID, reason string) error {
-	log := logger.From(ctx, s.log)
-
-	if err := s.repo.UpdateMessageStatus(ctx, messageID, messageStatusFailed, reason); err != nil {
-		log.Error("failed to mark message failed",
-			slog.String("message_id", messageID),
-			slog.Any("error", err),
-		)
-		return err
-	}
-
-	return nil
 }
 
 func (s *MessageService) DeleteMessage(ctx context.Context, messageID string) error {
