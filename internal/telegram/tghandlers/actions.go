@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
@@ -135,6 +136,9 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 
 	case data == callbackReviewModifyType:
 		err = tg.handleReviewModifyType(ctx, bot, chatID)
+
+	case data == callbackReviewModifyStartedAt:
+		err = tg.handleReviewModifyStartedAt(ctx, bot, chatID)
 
 	case data == callbackReviewBack:
 		r := tg.getPendingReview(chatID)
@@ -337,5 +341,73 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 		log.Error("failed to finish context flow", slog.Any("error", err))
 	}
 
+	return true
+}
+
+func (tg *TgHandlers) HandlePendingStartedAtInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
+	if update.Message == nil {
+		return false
+	}
+
+	chatID := update.Message.Chat.ID
+	if !tg.consumeAwaitingStartedAt(chatID) {
+		return false
+	}
+	log := logger.From(ctx, tg.log)
+
+	text := strings.TrimSpace(update.Message.Text)
+	if text == "" || strings.HasPrefix(text, "/") {
+		tg.setAwaitingStartedAt(chatID)
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Please enter a valid time or cancel.",
+			ReplyMarkup: &models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{{
+					{Text: "Cancel", CallbackData: callbackReviewCancel},
+				}},
+			},
+		})
+		if err != nil {
+			log.Error("failed to ask for start time again", slog.Any("error", err))
+		}
+		return true
+	}
+
+	t, err := parseStartedAt(text, time.Now().UTC())
+	if err != nil {
+		tg.setAwaitingStartedAt(chatID)
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("Could not parse %q.\nExamples: today 14:00 · yesterday · 28 april 10:00 · 2026-04-28 14:00", text),
+			ReplyMarkup: &models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{{
+					{Text: "Cancel", CallbackData: callbackReviewCancel},
+				}},
+			},
+		})
+		if sendErr != nil {
+			log.Error("failed to send parse error", slog.Any("error", sendErr))
+		}
+		return true
+	}
+
+	r := tg.getPendingReview(chatID)
+	if r == nil {
+		return true
+	}
+
+	r.mu.Lock()
+	if r.editIndex < 0 || r.editIndex >= len(r.activities) {
+		r.mu.Unlock()
+		return true
+	}
+	r.activities[r.editIndex].StartedAt = &t
+	r.editIndex = -1
+	snapshot := append([]domain.Activity(nil), r.activities...)
+	r.mu.Unlock()
+
+	if err := tg.sendReviewMessage(ctx, bot, chatID, snapshot); err != nil {
+		log.Error("failed to send review message after started_at edit", slog.Any("error", err))
+	}
 	return true
 }

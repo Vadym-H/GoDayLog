@@ -89,6 +89,10 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 		return
 	}
 
+	if b.tgHandlers.HandlePendingStartedAtInput(ctx, bot, update) {
+		return
+	}
+
 	if b.tgHandlers.HandlePendingTagInput(ctx, bot, update) {
 		return
 	}

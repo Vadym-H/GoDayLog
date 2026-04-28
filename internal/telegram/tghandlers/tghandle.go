@@ -40,23 +40,25 @@ type TgHandlers struct {
 	messageService messageService
 	aiProcessor    messageAIProcessor
 
-	pendingMu     sync.RWMutex
-	pendingLog    map[int64]struct{}
-	pendingLlmCtx map[int64]struct{}
-	pendingReview map[int64]*pendingReview
-	awaitingTag   map[int64]struct{}
+	pendingMu         sync.RWMutex
+	pendingLog        map[int64]struct{}
+	pendingLlmCtx     map[int64]struct{}
+	pendingReview     map[int64]*pendingReview
+	awaitingTag       map[int64]struct{}
+	awaitingStartedAt map[int64]struct{}
 }
 
 func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor) *TgHandlers {
 	return &TgHandlers{
-		log:            log,
-		userService:    userService,
-		messageService: messageService,
-		aiProcessor:    aiProcessor,
-		pendingLog:     make(map[int64]struct{}),
-		pendingLlmCtx:  make(map[int64]struct{}),
-		pendingReview:  make(map[int64]*pendingReview),
-		awaitingTag:    make(map[int64]struct{}),
+		log:               log,
+		userService:       userService,
+		messageService:    messageService,
+		aiProcessor:       aiProcessor,
+		pendingLog:        make(map[int64]struct{}),
+		pendingLlmCtx:     make(map[int64]struct{}),
+		pendingReview:     make(map[int64]*pendingReview),
+		awaitingTag:       make(map[int64]struct{}),
+		awaitingStartedAt: make(map[int64]struct{}),
 	}
 }
 
@@ -155,5 +157,27 @@ func (tg *TgHandlers) consumeAwaitingTag(chatID int64) bool {
 func (tg *TgHandlers) clearAwaitingTag(chatID int64) {
 	tg.pendingMu.Lock()
 	delete(tg.awaitingTag, chatID)
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) setAwaitingStartedAt(chatID int64) {
+	tg.pendingMu.Lock()
+	tg.awaitingStartedAt[chatID] = struct{}{}
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) consumeAwaitingStartedAt(chatID int64) bool {
+	tg.pendingMu.Lock()
+	defer tg.pendingMu.Unlock()
+	if _, ok := tg.awaitingStartedAt[chatID]; !ok {
+		return false
+	}
+	delete(tg.awaitingStartedAt, chatID)
+	return true
+}
+
+func (tg *TgHandlers) clearAwaitingStartedAt(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.awaitingStartedAt, chatID)
 	tg.pendingMu.Unlock()
 }
