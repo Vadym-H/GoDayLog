@@ -204,10 +204,12 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		var replyText string
 		switch {
 		case errors.Is(err, ai.ErrInputTooLong):
+			tg.setAwaitingLog(chatID)
 			replyText = "Your message is too long to process. Please shorten it and try again."
 		case errors.Is(err, ai.ErrDailyBudgetExceeded):
 			replyText = "You have reached your daily AI usage limit. Try again tomorrow."
 		default:
+			tg.setAwaitingLog(chatID)
 			log.Error("ai extraction failed", slog.String("message_id", messageID), slog.Any("error", err))
 			replyText = "Could not classify your activity right now. Please try again."
 		}

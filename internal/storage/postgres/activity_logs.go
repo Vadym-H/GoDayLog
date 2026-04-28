@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -26,7 +27,7 @@ func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID stri
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	for _, a := range items {
-		_, err := tx.Exec(ctx, `
+		result, err := tx.Exec(ctx, `
 			INSERT INTO activity_logs (message_id, user_id, description, tag, activity_type, duration_minutes, started_at, completed_at)
 			SELECT $1, m.user_id, $2, $3, $4, $5, $6, $7
 			FROM messages m
@@ -34,6 +35,9 @@ func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID stri
 		`, messageID, a.Description, a.Tag, a.ActivityType, a.DurationMinutes, a.StartedAt, a.CompletedAt)
 		if err != nil {
 			return fmt.Errorf("%s: insert: %w", op, err)
+		}
+		if result.RowsAffected() == 0 {
+			return fmt.Errorf("%s: insert: %w", op, storage.ErrMessageNotFound)
 		}
 	}
 

@@ -151,3 +151,9 @@ func (tg *TgHandlers) consumeAwaitingTag(chatID int64) bool {
 	delete(tg.awaitingTag, chatID)
 	return true
 }
+
+func (tg *TgHandlers) clearAwaitingTag(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.awaitingTag, chatID)
+	tg.pendingMu.Unlock()
+}

@@ -44,6 +44,7 @@ func (tg *TgHandlers) handleReviewAccept(ctx context.Context, bot *tgbot.Bot, ch
 		return sendErr
 	}
 
+	tg.clearAwaitingTag(chatID)
 	tg.clearPendingReview(chatID)
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -64,6 +65,7 @@ func (tg *TgHandlers) handleReviewCancel(ctx context.Context, bot *tgbot.Bot, ch
 	}
 
 	_ = tg.aiProcessor.CancelReview(ctx, r.messageID)
+	tg.clearAwaitingTag(chatID)
 	tg.clearPendingReview(chatID)
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{

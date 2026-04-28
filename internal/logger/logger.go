@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 type contextKey struct{}
@@ -12,7 +13,9 @@ type contextKey struct{}
 // NewRequestID generates a random 64-bit hex string for correlation logging.
 func NewRequestID() string {
 	var b [8]byte
-	_, _ = rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
 	return fmt.Sprintf("%x", b)
 }
 

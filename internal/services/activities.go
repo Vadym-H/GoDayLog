@@ -106,6 +106,7 @@ func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 					slog.Any("error", sumErr),
 				)
 			} else if used >= p.limits.DailyBudgetTokens {
+				_ = p.markFailed(ctx, messageID, "daily budget exceeded")
 				return nil, ai.ErrDailyBudgetExceeded
 			}
 		}
@@ -132,6 +133,12 @@ func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 	if !response.Valid {
 		log.Info("ai marked message as invalid", slog.String("message_id", messageID))
 		_ = p.markFailed(ctx, messageID, "ai: input not a valid day activity")
+		return nil, nil
+	}
+
+	if len(response.Activities) == 0 {
+		log.Info("ai returned no activities", slog.String("message_id", messageID))
+		_ = p.markFailed(ctx, messageID, "ai: no activities extracted")
 		return nil, nil
 	}
 
