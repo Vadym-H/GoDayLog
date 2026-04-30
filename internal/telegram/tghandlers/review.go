@@ -270,7 +270,7 @@ func (tg *TgHandlers) sendReviewMessage(ctx context.Context, bot *tgbot.Bot, cha
 	for i, a := range activities {
 		sb.WriteString(fmt.Sprintf("\n%d. %s\n   Tag: %s · Type: %s", i+1, a.Description, a.Tag, a.ActivityType))
 		if a.DurationMinutes != nil {
-			sb.WriteString(" · " + formatDuration(*a.DurationMinutes))
+			sb.WriteString(" · " + fmtMinutes(*a.DurationMinutes))
 		}
 		if a.StartedAt != nil {
 			sb.WriteString(fmt.Sprintf("\n   Started: %s", a.StartedAt.UTC().Format("2 Jan 2006 15:04 UTC")))
@@ -323,16 +323,4 @@ func (tg *TgHandlers) handleReviewModifyStartedAt(ctx context.Context, bot *tgbo
 		},
 	})
 	return err
-}
-
-func formatDuration(minutes int) string {
-	if minutes < 60 {
-		return fmt.Sprintf("%d min", minutes)
-	}
-	h := minutes / 60
-	m := minutes % 60
-	if m == 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dh %dmin", h, m)
 }

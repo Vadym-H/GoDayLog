@@ -31,19 +31,19 @@ type UserContext interface {
 	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
 }
 
-type UserService struct {
+type userService struct {
 	log     *slog.Logger
 	repo    UserCreator
 	userctx UserContext
 	limits  config.LLMUsageLimits
 }
 
-func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext, limits config.LLMUsageLimits) *UserService {
-	return &UserService{log: log, repo: repo, userctx: userctx, limits: limits}
+func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext, limits config.LLMUsageLimits) *userService {
+	return &userService{log: log, repo: repo, userctx: userctx, limits: limits}
 }
 
 // RegisterUser registers an external identity and backing user.
-func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error) {
+func (s *userService) RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error) {
 	log := logger.From(ctx, s.log)
 
 	userID, created, err := s.repo.CreateUser(ctx, id)
@@ -63,7 +63,7 @@ func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (str
 	return userID, created, nil
 }
 
-func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
+func (s *userService) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
 	log := logger.From(ctx, s.log)
 
 	if s.limits.Enabled && s.limits.MaxContextChars > 0 && len(llmContext) > s.limits.MaxContextChars {
@@ -83,15 +83,15 @@ func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity,
 	return nil
 }
 
-func (s *UserService) GetUserID(ctx context.Context, id domain.Identity) (string, error) {
+func (s *userService) GetUserID(ctx context.Context, id domain.Identity) (string, error) {
 	return s.userctx.GetUserID(ctx, id)
 }
 
-func (s *UserService) GetUserTimezone(ctx context.Context, id domain.Identity) (string, error) {
+func (s *userService) GetUserTimezone(ctx context.Context, id domain.Identity) (string, error) {
 	return s.userctx.GetUserTimezone(ctx, id)
 }
 
-func (s *UserService) GetUserContext(ctx context.Context, id domain.Identity) (string, error) {
+func (s *userService) GetUserContext(ctx context.Context, id domain.Identity) (string, error) {
 	log := logger.From(ctx, s.log)
 
 	llmContext, err := s.userctx.GetUserContext(ctx, id)

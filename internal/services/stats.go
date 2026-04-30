@@ -51,16 +51,16 @@ type StatsRepository interface {
 	GetStats(ctx context.Context, q StatsQuery) (StatsReport, error)
 }
 
-type StatsService struct {
+type statsService struct {
 	log  *slog.Logger
 	repo StatsRepository
 }
 
-func NewStatsService(log *slog.Logger, repo StatsRepository) *StatsService {
-	return &StatsService{log: log, repo: repo}
+func NewStatsService(log *slog.Logger, repo StatsRepository) *statsService {
+	return &statsService{log: log, repo: repo}
 }
 
-func (s *StatsService) GetStats(ctx context.Context, q StatsQuery) (StatsReport, error) {
+func (s *statsService) GetStats(ctx context.Context, q StatsQuery) (StatsReport, error) {
 	report, err := s.repo.GetStats(ctx, q)
 	if err != nil {
 		logger.From(ctx, s.log).Error("stats query failed", slog.Any("error", err))

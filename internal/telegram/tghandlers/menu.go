@@ -12,7 +12,7 @@ import (
 const (
 	callbackActionPrefix  = "action:"
 	callbackLogActivity   = callbackActionPrefix + "log"
-	callbackTodayStats    = callbackActionPrefix + "stats"
+	callbackStatsPicker   = callbackActionPrefix + "stats"
 	callbackHelp          = callbackActionPrefix + "help"
 	callbackHome          = callbackActionPrefix + "home"
 	callbackCancelLog     = callbackActionPrefix + "cancel_log"
@@ -36,7 +36,7 @@ func mainMenuMarkup() *models.InlineKeyboardMarkup {
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
 				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Today stats", CallbackData: callbackTodayStats},
+				{Text: "Statistics", CallbackData: callbackStatsPicker},
 			},
 			{
 				{Text: "Help", CallbackData: callbackHelp},

@@ -86,7 +86,7 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 		tg.setAwaitingLog(chatID)
 		err = tg.sendLogPrompt(ctx, bot, chatID)
 
-	case data == callbackTodayStats:
+	case data == callbackStatsPicker:
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
 		err = tg.sendTodayStats(ctx, bot, chatID)
@@ -183,6 +183,7 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 		})
 
 	case data == callbackStatsCustom:
+		tg.setAwaitingStatsRange(chatID)
 		_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Send a date range, e.g. `20.01.2025 - 20.05.2025`",

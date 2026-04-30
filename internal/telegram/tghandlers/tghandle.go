@@ -48,26 +48,28 @@ type TgHandlers struct {
 	aiProcessor    messageAIProcessor
 	statsService   statsService
 
-	pendingMu         sync.RWMutex
-	pendingLog        map[int64]struct{}
-	pendingLlmCtx     map[int64]struct{}
-	pendingReview     map[int64]*pendingReview
-	awaitingTag       map[int64]struct{}
-	awaitingStartedAt map[int64]struct{}
+	pendingMu          sync.RWMutex
+	pendingLog         map[int64]struct{}
+	pendingLlmCtx      map[int64]struct{}
+	pendingReview      map[int64]*pendingReview
+	awaitingTag        map[int64]struct{}
+	awaitingStartedAt  map[int64]struct{}
+	awaitingStatsRange map[int64]struct{}
 }
 
 func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService) *TgHandlers {
 	return &TgHandlers{
-		log:               log,
-		userService:       userService,
-		messageService:    messageService,
-		aiProcessor:       aiProcessor,
-		statsService:      statsService,
-		pendingLog:        make(map[int64]struct{}),
-		pendingLlmCtx:     make(map[int64]struct{}),
-		pendingReview:     make(map[int64]*pendingReview),
-		awaitingTag:       make(map[int64]struct{}),
-		awaitingStartedAt: make(map[int64]struct{}),
+		log:                log,
+		userService:        userService,
+		messageService:     messageService,
+		aiProcessor:        aiProcessor,
+		statsService:       statsService,
+		pendingLog:         make(map[int64]struct{}),
+		pendingLlmCtx:      make(map[int64]struct{}),
+		pendingReview:      make(map[int64]*pendingReview),
+		awaitingTag:        make(map[int64]struct{}),
+		awaitingStartedAt:  make(map[int64]struct{}),
+		awaitingStatsRange: make(map[int64]struct{}),
 	}
 }
 
@@ -188,5 +190,27 @@ func (tg *TgHandlers) consumeAwaitingStartedAt(chatID int64) bool {
 func (tg *TgHandlers) clearAwaitingStartedAt(chatID int64) {
 	tg.pendingMu.Lock()
 	delete(tg.awaitingStartedAt, chatID)
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) setAwaitingStatsRange(chatID int64) {
+	tg.pendingMu.Lock()
+	tg.awaitingStatsRange[chatID] = struct{}{}
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) consumeAwaitingStatsRange(chatID int64) bool {
+	tg.pendingMu.Lock()
+	defer tg.pendingMu.Unlock()
+	if _, ok := tg.awaitingStatsRange[chatID]; !ok {
+		return false
+	}
+	delete(tg.awaitingStatsRange, chatID)
+	return true
+}
+
+func (tg *TgHandlers) clearAwaitingStatsRange(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.awaitingStatsRange, chatID)
 	tg.pendingMu.Unlock()
 }

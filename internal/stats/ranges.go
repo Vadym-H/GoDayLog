@@ -1,6 +1,11 @@
 package stats
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
 
 // Today returns the UTC boundaries [from, to) that represent the current calendar
 // day in the given location. from is local midnight in UTC; to is from + 24h.
@@ -42,4 +47,31 @@ func ThisMonth(loc *time.Location) (from, to time.Time) {
 	from = time.Date(y, m, 1, 0, 0, 0, 0, loc).UTC()
 	to = time.Date(y, m+1, 1, 0, 0, 0, 0, loc).UTC()
 	return
+}
+
+// ParseCustomRange parses "DD.MM.YYYY - DD.MM.YYYY" (flexible whitespace around the dash).
+// Returns [from, to) as UTC midnight boundaries in loc.
+// Errors if dates are unparseable, from > to, or range exceeds 366 days.
+func ParseCustomRange(input string, loc *time.Location) (from, to time.Time, err error) {
+	parts := strings.SplitN(strings.TrimSpace(input), "-", 2)
+	if len(parts) != 2 {
+		return time.Time{}, time.Time{}, errors.New("invalid format")
+	}
+	fromDate, err := time.ParseInLocation("02.01.2006", strings.TrimSpace(parts[0]), loc)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid start date: %w", err)
+	}
+	toDate, err := time.ParseInLocation("02.01.2006", strings.TrimSpace(parts[1]), loc)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid end date: %w", err)
+	}
+	if fromDate.After(toDate) {
+		return time.Time{}, time.Time{}, errors.New("start date must not be after end date")
+	}
+	from = fromDate.UTC()
+	to = toDate.Add(24 * time.Hour).UTC()
+	if to.Sub(from) > 366*24*time.Hour {
+		return time.Time{}, time.Time{}, errors.New("range exceeds 366 days")
+	}
+	return from, to, nil
 }

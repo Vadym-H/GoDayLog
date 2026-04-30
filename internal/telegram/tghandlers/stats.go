@@ -3,10 +3,15 @@ package tghandlers
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/services"
+	"github.com/Vadym-H/GoDayLog/internal/stats"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -118,33 +123,66 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 			}
 		}
 
-		// day breakdown for multi-day ranges
+		// day/week breakdown for multi-day ranges
+		// ByDay from DB only contains days with activities, so no empty rows appear.
 		if len(report.ByDay) > 0 {
-			// index ByDay by local date (pgx returns DATE as UTC-midnight of the local date)
-			byDayMap := make(map[time.Time]services.DaySummary, len(report.ByDay))
-			for _, ds := range report.ByDay {
-				byDayMap[ds.Date] = ds
-			}
-
 			sb.WriteString("\n\n─────────────")
 
-			localStart := report.From.In(loc)
-			y, m, d := localStart.Date()
-			for i := 0; ; i++ {
-				dayLocal := time.Date(y, m, d+i, 0, 0, 0, 0, loc)
-				if !dayLocal.Before(report.To.In(loc)) {
-					break
+			if report.To.Sub(report.From) > 14*24*time.Hour {
+				// weekly buckets: group ByDay by Mon, aggregate, one line per week
+				type weekBucket struct {
+					monday time.Time
+					sunday time.Time
+					byType map[string]services.TypeSummary
 				}
-				// key must match the format pgx returns for DATE: UTC midnight of the local date
-				dayKey := time.Date(dayLocal.Year(), dayLocal.Month(), dayLocal.Day(), 0, 0, 0, 0, time.UTC)
+				var weekOrder []time.Time
+				weekMap := make(map[time.Time]*weekBucket)
 
-				sb.WriteString("\n")
-				sb.WriteString(dayLocal.Format("Mon 2 Jan"))
-				sb.WriteString("   ")
-				if ds, ok := byDayMap[dayKey]; ok {
-					sb.WriteString(formatDayLine(ds))
-				} else {
-					sb.WriteString("—")
+				for _, ds := range report.ByDay {
+					wd := int(ds.Date.Weekday())
+					if wd == 0 {
+						wd = 7
+					}
+					monday := ds.Date.AddDate(0, 0, 1-wd)
+					wb, exists := weekMap[monday]
+					if !exists {
+						wb = &weekBucket{
+							monday: monday,
+							sunday: monday.AddDate(0, 0, 6),
+							byType: make(map[string]services.TypeSummary),
+						}
+						weekMap[monday] = wb
+						weekOrder = append(weekOrder, monday)
+					}
+					for _, ts := range ds.ByType {
+						agg := wb.byType[ts.Type]
+						agg.Type = ts.Type
+						agg.Count += ts.Count
+						agg.TotalMinutes += ts.TotalMinutes
+						wb.byType[ts.Type] = agg
+					}
+				}
+
+				for _, monday := range weekOrder {
+					wb := weekMap[monday]
+					var dateLabel string
+					if monday.Month() == wb.sunday.Month() {
+						dateLabel = fmt.Sprintf("%d–%d %s", monday.Day(), wb.sunday.Day(), monday.Format("Jan"))
+					} else {
+						dateLabel = fmt.Sprintf("%d %s–%d %s", monday.Day(), monday.Format("Jan"), wb.sunday.Day(), wb.sunday.Format("Jan"))
+					}
+					typeSummaries := make([]services.TypeSummary, 0, len(wb.byType))
+					for _, ts := range wb.byType {
+						typeSummaries = append(typeSummaries, ts)
+					}
+					sb.WriteString("\n")
+					sb.WriteString(fmt.Sprintf("%-14s  %s", dateLabel, formatDayLine(services.DaySummary{ByType: typeSummaries})))
+				}
+			} else {
+				// daily: iterate ByDay directly — DB only returns days with activities
+				for _, ds := range report.ByDay {
+					sb.WriteString("\n")
+					sb.WriteString(fmt.Sprintf("%-12s  %s", ds.Date.Format("Mon 2 Jan"), formatDayLine(ds)))
 				}
 			}
 		}
@@ -154,7 +192,7 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
 				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Change range", CallbackData: callbackTodayStats},
+				{Text: "Change range", CallbackData: callbackStatsPicker},
 			},
 			{
 				{Text: "Home", CallbackData: callbackHome},
@@ -168,6 +206,78 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 		ReplyMarkup: markup,
 	})
 	return err
+}
+
+func (tg *TgHandlers) HandlePendingStatsRangeInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
+	if update.Message == nil {
+		return false
+	}
+	chatID := update.Message.Chat.ID
+	if !tg.consumeAwaitingStatsRange(chatID) {
+		return false
+	}
+	log := logger.From(ctx, tg.log)
+
+	text := strings.TrimSpace(update.Message.Text)
+	if text == "" || strings.HasPrefix(text, "/") {
+		tg.setAwaitingStatsRange(chatID)
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Send a date range, e.g. `20.01.2025 - 20.05.2025`",
+		})
+		if err != nil {
+			log.Error("failed to re-prompt stats range", slog.Any("error", err))
+		}
+		return true
+	}
+
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
+
+	tzName, err := tg.userService.GetUserTimezone(ctx, identity)
+	if err != nil {
+		log.Error("failed to get timezone", slog.Any("error", err))
+		tzName = "UTC"
+	}
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		loc = time.UTC
+	}
+
+	from, to, parseErr := stats.ParseCustomRange(text, loc)
+	if parseErr != nil {
+		tg.setAwaitingStatsRange(chatID)
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("Could not parse range: %s\nExample: `20.01.2025 - 20.05.2025`", parseErr.Error()),
+		})
+		if err != nil {
+			log.Error("failed to send parse error", slog.Any("error", err))
+		}
+		return true
+	}
+
+	userID, err := tg.userService.GetUserID(ctx, identity)
+	if err != nil {
+		log.Error("failed to get user id", slog.Any("error", err))
+		return true
+	}
+
+	report, err := tg.statsService.GetStats(ctx, services.StatsQuery{
+		UserID:   userID,
+		From:     from,
+		To:       to,
+		Timezone: tzName,
+	})
+	if err != nil {
+		log.Error("failed to get stats", slog.Any("error", err))
+		return true
+	}
+
+	label := from.In(loc).Format("2 Jan 2006") + " – " + to.In(loc).Add(-time.Second).Format("2 Jan 2006")
+	if err := tg.sendStatsMessage(ctx, bot, chatID, report, label, loc); err != nil {
+		log.Error("failed to send stats message", slog.Any("error", err))
+	}
+	return true
 }
 
 // formatDayLine renders the per-type breakdown for one day, e.g. "growth 45min · drain 1h".
