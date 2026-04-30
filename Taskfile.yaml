@@ -1,0 +1,74 @@
+version: '3'
+
+vars:
+  COMPOSE_DEV: docker-compose.dev.yml
+  COMPOSE_PROD: docker-compose.yml
+
+tasks:
+  # --- DEV ---
+
+  dev:up:
+    desc: Start dev environment
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} up
+
+  dev:up:build:
+    desc: First dev run with build
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} up --build
+
+  dev:down:
+    desc: Stop dev
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} down
+
+  dev:restart:
+    desc: Restart dev app
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} restart daylog
+
+  dev:logs:
+    desc: Dev logs
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} logs -f daylog
+
+  # --- PROD ---
+
+  prod:up:
+    desc: Start prod
+    cmds:
+      - docker-compose -f {{.COMPOSE_PROD}} up -d
+
+  prod:build:
+    desc: Build prod
+    cmds:
+      - docker-compose -f {{.COMPOSE_PROD}} build
+
+  prod:down:
+    desc: Stop prod
+    cmds:
+      - docker-compose -f {{.COMPOSE_PROD}} down
+
+  # --- DB ---
+
+  db:
+    desc: Connect to postgres
+    cmds:
+      - docker exec -it daylog-postgres psql -U ${DB_USER} -d ${DB_NAME}
+
+  # --- MIGRATIONS ---
+
+  migrate:up:
+    desc: Run migrations up
+    cmds:
+      - go run ./cmd/migrate -database-url="postgres://postgres:postgres@localhost:5433/daylog_db?sslmode=disable" -migrations-path=./migrations -direction=up
+
+  migrate:down:
+    desc: Rollback last migration
+    cmds:
+      - go run ./cmd/migrate -database-url="postgres://postgres:postgres@localhost:5433/daylog_db?sslmode=disable" -migrations-path=./migrations -direction=down
+
+  migrate:drop:
+    desc: Drop all migrations
+    cmds:
+      - go run ./cmd/migrate -database-url="postgres://postgres:postgres@localhost:5433/daylog_db?sslmode=disable" -migrations-path=./migrations -direction=drop

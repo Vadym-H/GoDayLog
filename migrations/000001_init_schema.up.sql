@@ -78,6 +78,11 @@ CREATE INDEX idx_users_deleted_at
 CREATE INDEX idx_activity_logs_deleted_at
     ON activity_logs(deleted_at) WHERE deleted_at IS NULL;
 
+-- Functional index for stats/notebook queries on effective time (COALESCE(started_at, created_at))
+CREATE INDEX idx_activity_logs_effective_time
+    ON activity_logs (user_id, COALESCE(started_at, created_at))
+    WHERE deleted_at IS NULL;
+
 -- AI REQUEST LOGS
 CREATE TABLE ai_request_logs (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

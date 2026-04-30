@@ -6,12 +6,19 @@ import (
 	"sync"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/services"
 )
 
 type userService interface {
 	RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error)
 	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
 	UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error
+	GetUserID(ctx context.Context, id domain.Identity) (string, error)
+	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
+}
+
+type statsService interface {
+	GetStats(ctx context.Context, q services.StatsQuery) (services.StatsReport, error)
 }
 
 type messageService interface {
@@ -39,6 +46,7 @@ type TgHandlers struct {
 	userService    userService
 	messageService messageService
 	aiProcessor    messageAIProcessor
+	statsService   statsService
 
 	pendingMu         sync.RWMutex
 	pendingLog        map[int64]struct{}
@@ -48,12 +56,13 @@ type TgHandlers struct {
 	awaitingStartedAt map[int64]struct{}
 }
 
-func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService) *TgHandlers {
 	return &TgHandlers{
 		log:               log,
 		userService:       userService,
 		messageService:    messageService,
 		aiProcessor:       aiProcessor,
+		statsService:      statsService,
 		pendingLog:        make(map[int64]struct{}),
 		pendingLlmCtx:     make(map[int64]struct{}),
 		pendingReview:     make(map[int64]*pendingReview),

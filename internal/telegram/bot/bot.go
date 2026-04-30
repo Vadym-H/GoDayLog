@@ -25,15 +25,17 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	messageRepo := storage.NewMessageRepo(db)
 	activityLogRepo := storage.NewActivityLogRepo(db)
 	aiRequestLogRepo := storage.NewAIRequestLogRepo(db)
+	statsRepo := storage.NewStatsRepo(db)
 
 	userService := services.NewUserService(log, userRepo, userRepo, limits)
 	messageService := services.NewMessageService(log, messageRepo)
 	limiter := ai.NewLimiterMiddleware(aiClient, log, limits)
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)
+	statsService := services.NewStatsService(log, statsRepo)
 
 	b := &Bot{
 		log:        log,
-		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor),
+		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor, statsService),
 	}
 
 	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.withRequestID(b.handleMessage)))

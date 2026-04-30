@@ -27,6 +27,8 @@ type UserCreator interface {
 type UserContext interface {
 	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
 	UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error
+	GetUserID(ctx context.Context, id domain.Identity) (string, error)
+	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
 }
 
 type UserService struct {
@@ -79,6 +81,14 @@ func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity,
 	)
 
 	return nil
+}
+
+func (s *UserService) GetUserID(ctx context.Context, id domain.Identity) (string, error) {
+	return s.userctx.GetUserID(ctx, id)
+}
+
+func (s *UserService) GetUserTimezone(ctx context.Context, id domain.Identity) (string, error) {
+	return s.userctx.GetUserTimezone(ctx, id)
 }
 
 func (s *UserService) GetUserContext(ctx context.Context, id domain.Identity) (string, error) {

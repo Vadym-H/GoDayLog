@@ -21,8 +21,6 @@ coverage.out
 .env.*
 !.env.example
 
-Taskfile.yaml
-
 docker-compose.dev.yml
 Dockerfile.dev
 
