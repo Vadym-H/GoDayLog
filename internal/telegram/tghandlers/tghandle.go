@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/services"
@@ -19,6 +20,18 @@ type userService interface {
 
 type statsService interface {
 	GetStats(ctx context.Context, q services.StatsQuery) (services.StatsReport, error)
+}
+
+type statsAnalyser interface {
+	Analyse(ctx context.Context, q services.StatsQuery, report services.StatsReport, userContext string) (string, error)
+}
+
+type pendingStatsState struct {
+	from   time.Time
+	to     time.Time
+	loc    *time.Location
+	tzName string
+	report services.StatsReport
 }
 
 type messageService interface {
@@ -47,6 +60,7 @@ type TgHandlers struct {
 	messageService messageService
 	aiProcessor    messageAIProcessor
 	statsService   statsService
+	statsAnalyser  statsAnalyser
 
 	pendingMu          sync.RWMutex
 	pendingLog         map[int64]struct{}
@@ -55,21 +69,24 @@ type TgHandlers struct {
 	awaitingTag        map[int64]struct{}
 	awaitingStartedAt  map[int64]struct{}
 	awaitingStatsRange map[int64]struct{}
+	pendingStats       map[int64]*pendingStatsState
 }
 
-func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService, analyser statsAnalyser) *TgHandlers {
 	return &TgHandlers{
 		log:                log,
 		userService:        userService,
 		messageService:     messageService,
 		aiProcessor:        aiProcessor,
 		statsService:       statsService,
+		statsAnalyser:      analyser,
 		pendingLog:         make(map[int64]struct{}),
 		pendingLlmCtx:      make(map[int64]struct{}),
 		pendingReview:      make(map[int64]*pendingReview),
 		awaitingTag:        make(map[int64]struct{}),
 		awaitingStartedAt:  make(map[int64]struct{}),
 		awaitingStatsRange: make(map[int64]struct{}),
+		pendingStats:       make(map[int64]*pendingStatsState),
 	}
 }
 
@@ -212,5 +229,23 @@ func (tg *TgHandlers) consumeAwaitingStatsRange(chatID int64) bool {
 func (tg *TgHandlers) clearAwaitingStatsRange(chatID int64) {
 	tg.pendingMu.Lock()
 	delete(tg.awaitingStatsRange, chatID)
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) setPendingStats(chatID int64, s *pendingStatsState) {
+	tg.pendingMu.Lock()
+	tg.pendingStats[chatID] = s
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) getPendingStats(chatID int64) *pendingStatsState {
+	tg.pendingMu.RLock()
+	defer tg.pendingMu.RUnlock()
+	return tg.pendingStats[chatID]
+}
+
+func (tg *TgHandlers) clearPendingStats(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.pendingStats, chatID)
 	tg.pendingMu.Unlock()
 }

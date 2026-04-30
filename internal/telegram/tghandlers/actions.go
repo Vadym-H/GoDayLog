@@ -83,6 +83,7 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 	switch {
 	case data == callbackLogActivity:
 		tg.clearAwaitingContext(chatID)
+		tg.clearPendingStats(chatID)
 		tg.setAwaitingLog(chatID)
 		err = tg.sendLogPrompt(ctx, bot, chatID)
 
@@ -99,6 +100,7 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 	case data == callbackHome:
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
+		tg.clearPendingStats(chatID)
 		err = tg.sendHomeMenu(ctx, bot, chatID)
 
 	case data == callbackUpdateContext:
@@ -188,6 +190,9 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 			ChatID: chatID,
 			Text:   "Send a date range, e.g. `20.01.2025 - 20.05.2025`",
 		})
+
+	case data == callbackStatsAnalyse:
+		err = tg.handleStatsAnalyse(ctx, bot, chatID)
 	}
 
 	if err != nil {

@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	callbackStatsToday  = callbackActionPrefix + "stats_today"
-	callbackStatsWeek   = callbackActionPrefix + "stats_week"
-	callbackStatsLast7  = callbackActionPrefix + "stats_last7"
-	callbackStatsMonth  = callbackActionPrefix + "stats_month"
-	callbackStatsCustom = callbackActionPrefix + "stats_custom"
+	callbackStatsToday   = callbackActionPrefix + "stats_today"
+	callbackStatsWeek    = callbackActionPrefix + "stats_week"
+	callbackStatsLast7   = callbackActionPrefix + "stats_last7"
+	callbackStatsMonth   = callbackActionPrefix + "stats_month"
+	callbackStatsCustom  = callbackActionPrefix + "stats_custom"
+	callbackStatsAnalyse = callbackActionPrefix + "stats_analyse"
 )
 
 // renderBar returns a 7-character ASCII bar proportional to minutes/totalMinutes.
@@ -195,6 +196,9 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 				{Text: "Change range", CallbackData: callbackStatsPicker},
 			},
 			{
+				{Text: "Analyse with AI", CallbackData: callbackStatsAnalyse},
+			},
+			{
 				{Text: "Home", CallbackData: callbackHome},
 			},
 		},
@@ -205,6 +209,15 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 		Text:        sb.String(),
 		ReplyMarkup: markup,
 	})
+	if err == nil {
+		tg.setPendingStats(chatID, &pendingStatsState{
+			from:   report.From,
+			to:     report.To,
+			loc:    loc,
+			tzName: loc.String(),
+			report: report,
+		})
+	}
 	return err
 }
 
@@ -278,6 +291,65 @@ func (tg *TgHandlers) HandlePendingStatsRangeInput(ctx context.Context, bot *tgb
 		log.Error("failed to send stats message", slog.Any("error", err))
 	}
 	return true
+}
+
+func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	ps := tg.getPendingStats(chatID)
+	if ps == nil {
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "No stats loaded. Please select a range first.",
+		})
+		return err
+	}
+
+	log := logger.From(ctx, tg.log)
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
+
+	userID, err := tg.userService.GetUserID(ctx, identity)
+	if err != nil {
+		log.Error("failed to get user id for analysis", slog.Any("error", err))
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Could not generate analysis right now. Please try again.",
+		})
+		return sendErr
+	}
+
+	userContext, err := tg.userService.GetUserContext(ctx, identity)
+	if err != nil {
+		log.Warn("could not fetch user context for analysis", slog.Any("error", err))
+		userContext = ""
+	}
+
+	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "Analysing...",
+	})
+	if err != nil {
+		return err
+	}
+
+	analysis, err := tg.statsAnalyser.Analyse(ctx, services.StatsQuery{
+		UserID:   userID,
+		From:     ps.from,
+		To:       ps.to,
+		Timezone: ps.tzName,
+	}, ps.report, userContext)
+	if err != nil {
+		log.Error("stats analysis failed", slog.Any("error", err))
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Could not generate analysis right now. Please try again.",
+		})
+		return sendErr
+	}
+
+	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: chatID,
+		Text:   analysis,
+	})
+	return err
 }
 
 // formatDayLine renders the per-type breakdown for one day, e.g. "growth 45min · drain 1h".

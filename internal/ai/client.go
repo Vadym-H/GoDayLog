@@ -18,6 +18,9 @@ import (
 //go:embed prompts/activity.txt
 var activityPrompt string
 
+//go:embed prompts/stats_analysis.txt
+var statsAnalysisPrompt string
+
 type Client struct {
 	http    *http.Client
 	log     *slog.Logger
@@ -56,6 +59,12 @@ type ActivityResponse struct {
 	Activities []ActivityItem `json:"activities"`
 	Usage      TokenUsage
 	Model      string
+}
+
+type AnalysisResponse struct {
+	Text  string
+	Usage TokenUsage
+	Model string
 }
 
 type chatMessage struct {
@@ -140,4 +149,59 @@ func (c *Client) ExtractActivity(ctx context.Context, today, userContext, userMe
 	response.Usage = usage
 	response.Model = c.model
 	return response, nil
+}
+
+func (c *Client) AnalyseStats(ctx context.Context, userPrompt string) (AnalysisResponse, error) {
+	messages := []chatMessage{
+		{Role: "system", Content: statsAnalysisPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	body, err := json.Marshal(completionRequest{Model: c.model, Messages: messages})
+	if err != nil {
+		return AnalysisResponse{}, fmt.Errorf("ai: marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return AnalysisResponse{}, fmt.Errorf("ai: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return AnalysisResponse{}, fmt.Errorf("ai: request failed: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.From(ctx, c.log).Warn("ai: close response body", slog.Any("error", err))
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return AnalysisResponse{Model: c.model}, fmt.Errorf("ai: unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(errBody))
+	}
+
+	var result completionResponse
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return AnalysisResponse{Model: c.model}, fmt.Errorf("ai: decode response: %w", err)
+	}
+
+	usage := TokenUsage{
+		PromptTokens:     result.Usage.PromptTokens,
+		CompletionTokens: result.Usage.CompletionTokens,
+		TotalTokens:      result.Usage.TotalTokens,
+	}
+
+	if len(result.Choices) == 0 {
+		return AnalysisResponse{Usage: usage, Model: c.model}, fmt.Errorf("ai: empty choices in response")
+	}
+
+	return AnalysisResponse{
+		Text:  result.Choices[0].Message.Content,
+		Usage: usage,
+		Model: c.model,
+	}, nil
 }

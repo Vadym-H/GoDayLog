@@ -37,3 +37,7 @@ Rules:
   - rest: relaxation, low-effort leisure.
   - drain: passive entertainment (social media, games, TV). Use "drain" if duration > 60 min, "rest" if <= 60 min. If duration is unknown, default to "drain" for typical drain-type activities.
 - If the user explicitly states an activity_type (e.g. "played guitar — routine"), respect it and use that value.
+IMPORTANT CONSTRAINT:
+"tag" MUST NEVER be any of: growth, routine, rest, drain.
+It must always be a concrete activity noun (e.g. cooking, reading, walking, coding).
+If the input contains only a category word (e.g. "routine"), infer the actual activity or set valid=false.

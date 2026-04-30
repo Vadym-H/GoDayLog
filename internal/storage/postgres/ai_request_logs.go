@@ -38,8 +38,8 @@ func (r *AIRequestLogRepo) CreateAIRequestLog(ctx context.Context, messageID, mo
 	const op = "storage.postgres.CreateAIRequestLog"
 
 	result, err := r.db.Exec(ctx, `
-		INSERT INTO ai_request_logs (user_id, message_id, prompt_tokens, completion_tokens, total_tokens, model)
-		SELECT m.user_id, $1, $2, $3, $4, $5
+		INSERT INTO ai_request_logs (user_id, message_id, prompt_tokens, completion_tokens, total_tokens, model, request_type)
+		SELECT m.user_id, $1, $2, $3, $4, $5, 'activity_extraction'
 		FROM messages m
 		WHERE m.id = $1
 	`, messageID, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, model)
@@ -48,6 +48,20 @@ func (r *AIRequestLogRepo) CreateAIRequestLog(ctx context.Context, messageID, mo
 	}
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("%s: %w", op, storage.ErrMessageNotFound)
+	}
+
+	return nil
+}
+
+func (r *AIRequestLogRepo) CreateStatsAILog(ctx context.Context, userID, model string, usage ai.TokenUsage) error {
+	const op = "storage.postgres.CreateStatsAILog"
+
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO ai_request_logs (user_id, message_id, prompt_tokens, completion_tokens, total_tokens, model, request_type)
+		VALUES ($1, NULL, $2, $3, $4, $5, 'stats_analysis')
+	`, userID, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, model)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	return nil

@@ -26,16 +26,18 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	activityLogRepo := storage.NewActivityLogRepo(db)
 	aiRequestLogRepo := storage.NewAIRequestLogRepo(db)
 	statsRepo := storage.NewStatsRepo(db)
+	statsAnalysisRepo := storage.NewStatsAnalysisRepo(db)
 
 	userService := services.NewUserService(log, userRepo, userRepo, limits)
 	messageService := services.NewMessageService(log, messageRepo)
 	limiter := ai.NewLimiterMiddleware(aiClient, log, limits)
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)
 	statsService := services.NewStatsService(log, statsRepo)
+	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo)
 
 	b := &Bot{
 		log:        log,
-		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor, statsService),
+		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser),
 	}
 
 	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.withRequestID(b.handleMessage)))
@@ -49,7 +51,7 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 		Commands: []models.BotCommand{
 			{Command: "start", Description: "Open home"},
 			{Command: "log", Description: "Log an activity"},
-			{Command: "stats", Description: "Today stats"},
+			{Command: "stats", Description: "Statistics"},
 			{Command: "help", Description: "How to use the bot"},
 		},
 	})
