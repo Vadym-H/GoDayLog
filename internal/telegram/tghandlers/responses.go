@@ -5,12 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
-	"github.com/Vadym-H/GoDayLog/internal/services"
-	"github.com/Vadym-H/GoDayLog/internal/stats"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -60,92 +56,7 @@ func activityWord(n int) string {
 }
 
 func (tg *TgHandlers) sendTodayStats(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
-
-	userID, err := tg.userService.GetUserID(ctx, identity)
-	if err != nil {
-		return fmt.Errorf("get user id: %w", err)
-	}
-
-	tzName, err := tg.userService.GetUserTimezone(ctx, identity)
-	if err != nil {
-		return fmt.Errorf("get timezone: %w", err)
-	}
-
-	loc, err := time.LoadLocation(tzName)
-	if err != nil {
-		loc = time.UTC
-	}
-
-	from, to := stats.Today(loc)
-
-	report, err := tg.statsService.GetStats(ctx, services.StatsQuery{
-		UserID:   userID,
-		From:     from,
-		To:       to,
-		Timezone: tzName,
-	})
-	if err != nil {
-		return fmt.Errorf("get stats: %w", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Today · ")
-	sb.WriteString(from.In(loc).Format("Mon 2 Jan"))
-	sb.WriteString("\n\n")
-
-	if report.TotalCount == 0 {
-		sb.WriteString("No activities logged today.")
-	} else {
-		parts := []string{activityWord(report.TotalCount)}
-		if report.TotalMinutes > 0 {
-			parts = append(parts, fmtMinutes(report.TotalMinutes)+" tracked")
-		}
-		if report.UntrackedCount > 0 {
-			parts = append(parts, strconv.Itoa(report.UntrackedCount)+" untracked")
-		}
-		sb.WriteString(strings.Join(parts, " · "))
-
-		first := true
-		for _, ts := range report.ByType {
-			if ts.Count == 0 {
-				continue
-			}
-			if first {
-				sb.WriteString("\n\n")
-				first = false
-			} else {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(fmt.Sprintf("%-7s  %s", ts.Type, activityWord(ts.Count)))
-			if ts.TotalMinutes > 0 {
-				sb.WriteString(" · ")
-				sb.WriteString(fmtMinutes(ts.TotalMinutes))
-			}
-			if ts.UntrackedCount > 0 {
-				sb.WriteString(fmt.Sprintf("  (%d untracked)", ts.UntrackedCount))
-			}
-		}
-	}
-
-	markup := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Refresh", CallbackData: callbackTodayStats},
-			},
-			{
-				{Text: "Home", CallbackData: callbackHome},
-			},
-		},
-	}
-
-	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        sb.String(),
-		ReplyMarkup: markup,
-	})
-	return err
+	return tg.sendStatsPicker(ctx, bot, chatID)
 }
 
 func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64) error {

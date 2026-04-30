@@ -27,6 +27,10 @@ Dockerfile.dev
 *.md
 !README.md
 
+/cmd/seed
+/plans
+
+
 /docs
 .claude
 .mcp.json

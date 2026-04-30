@@ -13,6 +13,7 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/services"
+	"github.com/Vadym-H/GoDayLog/internal/stats"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -156,11 +157,74 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 
 	case strings.HasPrefix(data, callbackReviewSetTypePrefix):
 		err = tg.handleReviewSetType(ctx, bot, chatID, data)
+
+	case data == callbackStatsToday:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.Today(loc)
+			return from, to, "Today · " + from.In(loc).Format("Mon 2 Jan")
+		})
+
+	case data == callbackStatsWeek:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.ThisWeek(loc)
+			return from, to, "This Week · " + from.In(loc).Format("2 Jan") + " – " + to.In(loc).Add(-time.Second).Format("2 Jan")
+		})
+
+	case data == callbackStatsLast7:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.Last7Days(loc)
+			return from, to, "Last 7 Days · " + from.In(loc).Format("2 Jan") + " – " + to.In(loc).Add(-time.Second).Format("2 Jan")
+		})
+
+	case data == callbackStatsMonth:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.ThisMonth(loc)
+			return from, to, "This Month · " + from.In(loc).Format("Jan 2006")
+		})
+
+	case data == callbackStatsCustom:
+		_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Send a date range, e.g. `20.01.2025 - 20.05.2025`",
+		})
 	}
 
 	if err != nil {
 		log.Error("failed to handle menu action", slog.Any("error", err))
 	}
+}
+
+func (tg *TgHandlers) handleStatsRange(ctx context.Context, bot *tgbot.Bot, chatID int64, rangeFunc func(*time.Location) (time.Time, time.Time, string)) error {
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
+
+	userID, err := tg.userService.GetUserID(ctx, identity)
+	if err != nil {
+		return fmt.Errorf("get user id: %w", err)
+	}
+
+	tzName, err := tg.userService.GetUserTimezone(ctx, identity)
+	if err != nil {
+		return fmt.Errorf("get timezone: %w", err)
+	}
+
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		loc = time.UTC
+	}
+
+	from, to, label := rangeFunc(loc)
+
+	report, err := tg.statsService.GetStats(ctx, services.StatsQuery{
+		UserID:   userID,
+		From:     from,
+		To:       to,
+		Timezone: tzName,
+	})
+	if err != nil {
+		return fmt.Errorf("get stats: %w", err)
+	}
+
+	return tg.sendStatsMessage(ctx, bot, chatID, report, label, loc)
 }
 
 func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {

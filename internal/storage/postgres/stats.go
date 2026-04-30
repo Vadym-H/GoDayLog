@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/services"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -63,6 +64,90 @@ func (r *StatsRepo) GetStats(ctx context.Context, q services.StatsQuery) (servic
 		}
 	}
 
+	tagRows, err := r.db.Query(ctx, `
+		SELECT
+			tag,
+			COUNT(*)                           AS count,
+			COALESCE(SUM(duration_minutes), 0) AS total_minutes
+		FROM activity_logs
+		WHERE user_id   = $1
+		  AND deleted_at IS NULL
+		  AND COALESCE(started_at, created_at) >= $2
+		  AND COALESCE(started_at, created_at) <  $3
+		GROUP BY tag
+		ORDER BY count DESC
+		LIMIT 5
+	`, q.UserID, q.From, q.To)
+	if err != nil {
+		return services.StatsReport{}, fmt.Errorf("%s: tag query: %w", op, err)
+	}
+	defer tagRows.Close()
+
+	var topTags []services.TagSummary
+	for tagRows.Next() {
+		var ts services.TagSummary
+		if err := tagRows.Scan(&ts.Tag, &ts.Count, &ts.TotalMinutes); err != nil {
+			return services.StatsReport{}, fmt.Errorf("%s: tag scan: %w", op, err)
+		}
+		topTags = append(topTags, ts)
+	}
+	if err := tagRows.Err(); err != nil {
+		return services.StatsReport{}, fmt.Errorf("%s: tag rows: %w", op, err)
+	}
+
+	var byDay []services.DaySummary
+	if q.To.Sub(q.From) > 24*time.Hour {
+		tz := q.Timezone
+		if tz == "" {
+			tz = "UTC"
+		}
+		dayRows, err := r.db.Query(ctx, `
+			SELECT
+				DATE(COALESCE(started_at, created_at) AT TIME ZONE $4) AS day,
+				activity_type,
+				COUNT(*)                                                AS count,
+				COALESCE(SUM(duration_minutes), 0)                     AS total_minutes
+			FROM activity_logs
+			WHERE user_id   = $1
+			  AND deleted_at IS NULL
+			  AND COALESCE(started_at, created_at) >= $2
+			  AND COALESCE(started_at, created_at) <  $3
+			GROUP BY day, activity_type
+			ORDER BY day ASC
+		`, q.UserID, q.From, q.To, tz)
+		if err != nil {
+			return services.StatsReport{}, fmt.Errorf("%s: day query: %w", op, err)
+		}
+		defer dayRows.Close()
+
+		dayMap := make(map[time.Time]*services.DaySummary)
+		var dayOrder []time.Time
+		for dayRows.Next() {
+			var day time.Time
+			var ts services.TypeSummary
+			if err := dayRows.Scan(&day, &ts.Type, &ts.Count, &ts.TotalMinutes); err != nil {
+				return services.StatsReport{}, fmt.Errorf("%s: day scan: %w", op, err)
+			}
+			ds, exists := dayMap[day]
+			if !exists {
+				ds = &services.DaySummary{Date: day}
+				dayMap[day] = ds
+				dayOrder = append(dayOrder, day)
+			}
+			ds.Count += ts.Count
+			ds.TotalMinutes += ts.TotalMinutes
+			ds.ByType = append(ds.ByType, ts)
+		}
+		if err := dayRows.Err(); err != nil {
+			return services.StatsReport{}, fmt.Errorf("%s: day rows: %w", op, err)
+		}
+
+		byDay = make([]services.DaySummary, len(dayOrder))
+		for i, d := range dayOrder {
+			byDay[i] = *dayMap[d]
+		}
+	}
+
 	return services.StatsReport{
 		From:           q.From,
 		To:             q.To,
@@ -70,5 +155,7 @@ func (r *StatsRepo) GetStats(ctx context.Context, q services.StatsQuery) (servic
 		TotalMinutes:   totalMinutes,
 		UntrackedCount: totalUntracked,
 		ByType:         byType,
+		TopTags:        topTags,
+		ByDay:          byDay,
 	}, nil
 }
