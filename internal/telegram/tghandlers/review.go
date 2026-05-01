@@ -14,14 +14,15 @@ import (
 )
 
 const (
-	callbackReviewAccept        = callbackActionPrefix + "review:accept"
-	callbackReviewCancel        = callbackActionPrefix + "review:cancel"
-	callbackReviewModify        = callbackActionPrefix + "review:modify"
-	callbackReviewModifyTag     = callbackActionPrefix + "review:modify_tag"
-	callbackReviewModifyType    = callbackActionPrefix + "review:modify_type"
-	callbackReviewBack          = callbackActionPrefix + "review:back"
-	callbackReviewPickPrefix    = callbackActionPrefix + "review:pick:"
-	callbackReviewSetTypePrefix = callbackActionPrefix + "review:set_type:"
+	callbackReviewAccept          = callbackActionPrefix + "review:accept"
+	callbackReviewCancel          = callbackActionPrefix + "review:cancel"
+	callbackReviewModify          = callbackActionPrefix + "review:modify"
+	callbackReviewModifyTag       = callbackActionPrefix + "review:modify_tag"
+	callbackReviewModifyType      = callbackActionPrefix + "review:modify_type"
+	callbackReviewModifyStartedAt = callbackActionPrefix + "review:modify_started_at"
+	callbackReviewBack            = callbackActionPrefix + "review:back"
+	callbackReviewPickPrefix      = callbackActionPrefix + "review:pick:"
+	callbackReviewSetTypePrefix   = callbackActionPrefix + "review:set_type:"
 )
 
 func (tg *TgHandlers) handleReviewAccept(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
@@ -45,6 +46,7 @@ func (tg *TgHandlers) handleReviewAccept(ctx context.Context, bot *tgbot.Bot, ch
 	}
 
 	tg.clearAwaitingTag(chatID)
+	tg.clearAwaitingStartedAt(chatID)
 	tg.clearPendingReview(chatID)
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -66,6 +68,7 @@ func (tg *TgHandlers) handleReviewCancel(ctx context.Context, bot *tgbot.Bot, ch
 
 	_ = tg.aiProcessor.CancelReview(ctx, r.messageID)
 	tg.clearAwaitingTag(chatID)
+	tg.clearAwaitingStartedAt(chatID)
 	tg.clearPendingReview(chatID)
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -138,14 +141,21 @@ func (tg *TgHandlers) handleReviewPick(ctx context.Context, bot *tgbot.Bot, chat
 }
 
 func (tg *TgHandlers) sendModifyOptions(ctx context.Context, bot *tgbot.Bot, chatID int64, a domain.Activity, index int) error {
-	text := fmt.Sprintf("Modify activity %d: %q\nTag: %s · Type: %s",
-		index+1, a.Description, a.Tag, a.ActivityType)
+	startedAt := "not set"
+	if a.StartedAt != nil {
+		startedAt = a.StartedAt.UTC().Format("2 Jan 2006 15:04 UTC")
+	}
+	text := fmt.Sprintf("Modify activity %d: %q\nTag: %s · Type: %s\nStarted: %s",
+		index+1, a.Description, a.Tag, a.ActivityType, startedAt)
 
 	markup := &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
 				{Text: "Modify tag", CallbackData: callbackReviewModifyTag},
 				{Text: "Modify type", CallbackData: callbackReviewModifyType},
+			},
+			{
+				{Text: "Modify started at", CallbackData: callbackReviewModifyStartedAt},
 			},
 			{
 				{Text: "Back", CallbackData: callbackReviewBack},
@@ -260,7 +270,12 @@ func (tg *TgHandlers) sendReviewMessage(ctx context.Context, bot *tgbot.Bot, cha
 	for i, a := range activities {
 		sb.WriteString(fmt.Sprintf("\n%d. %s\n   Tag: %s · Type: %s", i+1, a.Description, a.Tag, a.ActivityType))
 		if a.DurationMinutes != nil {
-			sb.WriteString(" · " + formatDuration(*a.DurationMinutes))
+			sb.WriteString(" · " + fmtMinutes(*a.DurationMinutes))
+		}
+		if a.StartedAt != nil {
+			sb.WriteString(fmt.Sprintf("\n   Started: %s", a.StartedAt.UTC().Format("2 Jan 2006 15:04 UTC")))
+		} else {
+			sb.WriteString("\n   Started: not set")
 		}
 		sb.WriteString("\n")
 	}
@@ -283,14 +298,29 @@ func (tg *TgHandlers) sendReviewMessage(ctx context.Context, bot *tgbot.Bot, cha
 	return err
 }
 
-func formatDuration(minutes int) string {
-	if minutes < 60 {
-		return fmt.Sprintf("%d min", minutes)
+func (tg *TgHandlers) handleReviewModifyStartedAt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	r := tg.getPendingReview(chatID)
+	if r == nil {
+		return nil
 	}
-	h := minutes / 60
-	m := minutes % 60
-	if m == 0 {
-		return fmt.Sprintf("%dh", h)
+
+	r.mu.Lock()
+	editIdx := r.editIndex
+	r.mu.Unlock()
+	if editIdx < 0 {
+		return nil
 	}
-	return fmt.Sprintf("%dh %dmin", h, m)
+
+	tg.setAwaitingStartedAt(chatID)
+
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "Send the new start time.\nExamples: today 14:00 · yesterday · yesterday 09:30 · 3 days ago · 28 april 10:00 · 2026-04-28 14:00",
+		ReplyMarkup: &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{{
+				{Text: "Cancel", CallbackData: callbackReviewCancel},
+			}},
+		},
+	})
+	return err
 }

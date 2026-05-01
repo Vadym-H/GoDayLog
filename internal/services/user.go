@@ -27,6 +27,9 @@ type UserCreator interface {
 type UserContext interface {
 	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
 	UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error
+	UpdateUserTimezone(ctx context.Context, id domain.Identity, timezone string) error
+	GetUserID(ctx context.Context, id domain.Identity) (string, error)
+	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
 }
 
 type UserService struct {
@@ -78,6 +81,22 @@ func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity,
 		slog.String("external_id", id.ExternalID),
 	)
 
+	return nil
+}
+
+func (s *UserService) GetUserID(ctx context.Context, id domain.Identity) (string, error) {
+	return s.userctx.GetUserID(ctx, id)
+}
+
+func (s *UserService) GetUserTimezone(ctx context.Context, id domain.Identity) (string, error) {
+	return s.userctx.GetUserTimezone(ctx, id)
+}
+
+func (s *UserService) UpdateUserTimezone(ctx context.Context, id domain.Identity, timezone string) error {
+	if err := s.userctx.UpdateUserTimezone(ctx, id, timezone); err != nil {
+		logger.From(ctx, s.log).Error("failed to update user timezone", slog.Any("error", err))
+		return err
+	}
 	return nil
 }
 

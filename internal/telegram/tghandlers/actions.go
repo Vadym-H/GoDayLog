@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/services"
+	"github.com/Vadym-H/GoDayLog/internal/stats"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -81,10 +83,11 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 	switch {
 	case data == callbackLogActivity:
 		tg.clearAwaitingContext(chatID)
+		tg.clearPendingStats(chatID)
 		tg.setAwaitingLog(chatID)
 		err = tg.sendLogPrompt(ctx, bot, chatID)
 
-	case data == callbackTodayStats:
+	case data == callbackStatsPicker:
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
 		err = tg.sendTodayStats(ctx, bot, chatID)
@@ -97,6 +100,7 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 	case data == callbackHome:
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
+		tg.clearPendingStats(chatID)
 		err = tg.sendHomeMenu(ctx, bot, chatID)
 
 	case data == callbackUpdateContext:
@@ -136,6 +140,9 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 	case data == callbackReviewModifyType:
 		err = tg.handleReviewModifyType(ctx, bot, chatID)
 
+	case data == callbackReviewModifyStartedAt:
+		err = tg.handleReviewModifyStartedAt(ctx, bot, chatID)
+
 	case data == callbackReviewBack:
 		r := tg.getPendingReview(chatID)
 		if r == nil {
@@ -152,11 +159,96 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 
 	case strings.HasPrefix(data, callbackReviewSetTypePrefix):
 		err = tg.handleReviewSetType(ctx, bot, chatID, data)
+
+	case data == callbackStatsToday:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.Today(loc)
+			return from, to, "Today · " + from.In(loc).Format("Mon 2 Jan")
+		})
+
+	case data == callbackStatsWeek:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.ThisWeek(loc)
+			return from, to, "This Week · " + from.In(loc).Format("2 Jan") + " – " + to.In(loc).Add(-time.Second).Format("2 Jan")
+		})
+
+	case data == callbackStatsLast7:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.Last7Days(loc)
+			return from, to, "Last 7 Days · " + from.In(loc).Format("2 Jan") + " – " + to.In(loc).Add(-time.Second).Format("2 Jan")
+		})
+
+	case data == callbackStatsMonth:
+		err = tg.handleStatsRange(ctx, bot, chatID, func(loc *time.Location) (time.Time, time.Time, string) {
+			from, to := stats.ThisMonth(loc)
+			return from, to, "This Month · " + from.In(loc).Format("Jan 2006")
+		})
+
+	case data == callbackStatsCustom:
+		tg.setAwaitingStatsRange(chatID)
+		_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Send a date range, e.g. `20.01.2025 - 20.05.2025`",
+		})
+
+	case data == callbackStatsAnalyse:
+		err = tg.handleStatsAnalyse(ctx, bot, chatID, update.CallbackQuery.From.ID)
+
+	case data == callbackSettings:
+		tg.clearAwaitingLog(chatID)
+		tg.clearAwaitingContext(chatID)
+		err = tg.sendSettingsMenu(ctx, bot, chatID)
+
+	case data == callbackSetTimezone:
+		tg.clearAwaitingLog(chatID)
+		tg.clearAwaitingContext(chatID)
+		tg.setAwaitingLocation(chatID)
+		err = tg.sendLocationPrompt(ctx, bot, chatID)
+
+	case data == callbackSkipLocation:
+		if !tg.isAwaitingLocation(chatID) {
+			return
+		}
+		tg.clearAwaitingLocation(chatID)
+		err = tg.finishSkippedLocationFlow(ctx, bot, chatID)
 	}
 
 	if err != nil {
 		log.Error("failed to handle menu action", slog.Any("error", err))
 	}
+}
+
+func (tg *TgHandlers) handleStatsRange(ctx context.Context, bot *tgbot.Bot, chatID int64, rangeFunc func(*time.Location) (time.Time, time.Time, string)) error {
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
+
+	userID, err := tg.userService.GetUserID(ctx, identity)
+	if err != nil {
+		return fmt.Errorf("get user id: %w", err)
+	}
+
+	tzName, err := tg.userService.GetUserTimezone(ctx, identity)
+	if err != nil {
+		return fmt.Errorf("get timezone: %w", err)
+	}
+
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		loc = time.UTC
+	}
+
+	from, to, label := rangeFunc(loc)
+
+	report, err := tg.statsService.GetStats(ctx, services.StatsQuery{
+		UserID:   userID,
+		From:     from,
+		To:       to,
+		Timezone: tzName,
+	})
+	if err != nil {
+		return fmt.Errorf("get stats: %w", err)
+	}
+
+	return tg.sendStatsMessage(ctx, bot, chatID, report, label, loc)
 }
 
 func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
@@ -337,5 +429,132 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 		log.Error("failed to finish context flow", slog.Any("error", err))
 	}
 
+	return true
+}
+
+func (tg *TgHandlers) HandlePendingLocationInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
+	if update.Message == nil || update.Message.Location == nil {
+		return false
+	}
+
+	chatID := update.Message.Chat.ID
+	if !tg.consumeAwaitingLocation(chatID) {
+		return false
+	}
+	log := logger.From(ctx, tg.log)
+
+	tzName := tg.tzFinder.GetTimezoneName(update.Message.Location.Longitude, update.Message.Location.Latitude)
+	if tzName == "" {
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:      chatID,
+			Text:        "Could not detect timezone from your location. Please try again or skip.",
+			ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+		})
+		if err != nil {
+			log.Error("failed to send timezone detection error", slog.Any("error", err))
+		}
+		return true
+	}
+
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
+	if err := tg.userService.UpdateUserTimezone(ctx, identity, tzName); err != nil {
+		log.Error("failed to update timezone", slog.Any("error", err))
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:      chatID,
+			Text:        "Could not save your timezone. Please try again.",
+			ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+		})
+		if sendErr != nil {
+			log.Error("failed to send timezone save error", slog.Any("error", sendErr))
+		}
+		return true
+	}
+
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        "Timezone set to " + tzName + ".",
+		ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+	})
+	if err != nil {
+		log.Error("failed to send timezone confirmation", slog.Any("error", err))
+		return true
+	}
+
+	if err := tg.sendHomeMenu(ctx, bot, chatID); err != nil {
+		log.Error("failed to send home menu after timezone set", slog.Any("error", err))
+	}
+	return true
+}
+
+func (tg *TgHandlers) HandlePendingStartedAtInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
+	if update.Message == nil {
+		return false
+	}
+
+	chatID := update.Message.Chat.ID
+	if !tg.consumeAwaitingStartedAt(chatID) {
+		return false
+	}
+	log := logger.From(ctx, tg.log)
+
+	text := strings.TrimSpace(update.Message.Text)
+	if text == "" || strings.HasPrefix(text, "/") {
+		tg.setAwaitingStartedAt(chatID)
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Please enter a valid time or cancel.",
+			ReplyMarkup: &models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{{
+					{Text: "Cancel", CallbackData: callbackReviewCancel},
+				}},
+			},
+		})
+		if err != nil {
+			log.Error("failed to ask for start time again", slog.Any("error", err))
+		}
+		return true
+	}
+
+	tzName, _ := tg.userService.GetUserTimezone(ctx, domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)})
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		loc = time.UTC
+	}
+	t, err := parseStartedAt(text, time.Now().In(loc))
+	if err != nil {
+		tg.setAwaitingStartedAt(chatID)
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("Could not parse %q.\nExamples: today 14:00 · yesterday · 28 april 10:00 · 2026-04-28 14:00", text),
+			ReplyMarkup: &models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{{
+					{Text: "Cancel", CallbackData: callbackReviewCancel},
+				}},
+			},
+		})
+		if sendErr != nil {
+			log.Error("failed to send parse error", slog.Any("error", sendErr))
+		}
+		return true
+	}
+
+	r := tg.getPendingReview(chatID)
+	if r == nil {
+		return true
+	}
+
+	r.mu.Lock()
+	if r.editIndex < 0 || r.editIndex >= len(r.activities) {
+		r.mu.Unlock()
+		return true
+	}
+	r.activities[r.editIndex].StartedAt = &t
+	r.editIndex = -1
+	snapshot := append([]domain.Activity(nil), r.activities...)
+	r.mu.Unlock()
+
+	if err := tg.sendReviewMessage(ctx, bot, chatID, snapshot); err != nil {
+		log.Error("failed to send review message after started_at edit", slog.Any("error", err))
+	}
 	return true
 }

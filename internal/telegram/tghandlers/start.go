@@ -21,6 +21,8 @@ func (tg *TgHandlers) HandleStart(ctx context.Context, bot *tgbot.Bot, update *m
 	chatID := update.Message.Chat.ID
 	tg.clearAwaitingLog(chatID)
 	tg.clearAwaitingContext(chatID)
+	tg.clearAwaitingLocation(chatID)
+	tg.clearOnboarding(chatID)
 
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(user.ID, 10)}
 	_, isNewUser, err := tg.userService.RegisterUser(ctx, identity)
@@ -36,6 +38,7 @@ func (tg *TgHandlers) HandleStart(ctx context.Context, bot *tgbot.Bot, update *m
 	}
 
 	if isNewUser {
+		tg.setOnboarding(chatID)
 		tg.setAwaitingContext(chatID)
 		if err = tg.sendContextPrompt(ctx, bot, chatID); err != nil {
 			log.Error("failed to send context prompt", slog.Any("error", err))

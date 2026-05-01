@@ -35,7 +35,7 @@ type AIRequestLogRepository interface {
 	SumTokensSince(ctx context.Context, userID string, since time.Time) (int, error)
 }
 
-type MessageAIProcessor struct {
+type messageAIProcessor struct {
 	log           *slog.Logger
 	ai            AIClient
 	messageRepo   MessageRepository
@@ -45,8 +45,8 @@ type MessageAIProcessor struct {
 	limits        config.LLMUsageLimits
 }
 
-func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRepository, userCtxReader UserContextReader, activityRepo ActivityLogRepository, aiLogRepo AIRequestLogRepository, limits config.LLMUsageLimits) *MessageAIProcessor {
-	return &MessageAIProcessor{
+func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRepository, userCtxReader UserContextReader, activityRepo ActivityLogRepository, aiLogRepo AIRequestLogRepository, limits config.LLMUsageLimits) *messageAIProcessor {
+	return &messageAIProcessor{
 		log:           log,
 		ai:            ai,
 		messageRepo:   messageRepo,
@@ -59,7 +59,7 @@ func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRep
 
 // ExtractActivities calls AI and returns items for user review.
 // On AI failure or invalid input it marks the message as failed and returns an error.
-func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]domain.Activity, error) {
+func (p *messageAIProcessor) ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]domain.Activity, error) {
 	log := logger.From(ctx, p.log)
 
 	userContext, err := p.userCtxReader.GetUserContext(ctx, id)
@@ -158,7 +158,7 @@ func (p *MessageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 }
 
 // SaveActivities inserts accepted activities in a single transaction and marks the message done.
-func (p *MessageAIProcessor) SaveActivities(ctx context.Context, messageID string, activities []domain.Activity) error {
+func (p *messageAIProcessor) SaveActivities(ctx context.Context, messageID string, activities []domain.Activity) error {
 	log := logger.From(ctx, p.log)
 
 	if err := p.activityRepo.CreateActivityLogs(ctx, messageID, activities); err != nil {
@@ -182,11 +182,11 @@ func (p *MessageAIProcessor) SaveActivities(ctx context.Context, messageID strin
 }
 
 // CancelReview marks the message as failed because the user cancelled the review.
-func (p *MessageAIProcessor) CancelReview(ctx context.Context, messageID string) error {
+func (p *messageAIProcessor) CancelReview(ctx context.Context, messageID string) error {
 	return p.markFailed(ctx, messageID, "user cancelled review")
 }
 
-func (p *MessageAIProcessor) markFailed(ctx context.Context, messageID, reason string) error {
+func (p *messageAIProcessor) markFailed(ctx context.Context, messageID, reason string) error {
 	log := logger.From(ctx, p.log)
 
 	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, messageStatusFailed, reason); err != nil {

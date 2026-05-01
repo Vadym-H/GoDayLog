@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
@@ -12,6 +13,7 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/telegram/tghandlers"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/ringsaturn/tzf"
 )
 
 type Bot struct {
@@ -21,19 +23,28 @@ type Bot struct {
 }
 
 func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client, limits config.LLMUsageLimits) (*Bot, error) {
+	tzFinder, err := tzf.NewDefaultFinder()
+	if err != nil {
+		return nil, fmt.Errorf("init timezone finder: %w", err)
+	}
+
 	userRepo := storage.NewUserRepo(db)
 	messageRepo := storage.NewMessageRepo(db)
 	activityLogRepo := storage.NewActivityLogRepo(db)
 	aiRequestLogRepo := storage.NewAIRequestLogRepo(db)
+	statsRepo := storage.NewStatsRepo(db)
+	statsAnalysisRepo := storage.NewStatsAnalysisRepo(db)
 
 	userService := services.NewUserService(log, userRepo, userRepo, limits)
 	messageService := services.NewMessageService(log, messageRepo)
 	limiter := ai.NewLimiterMiddleware(aiClient, log, limits)
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)
+	statsService := services.NewStatsService(log, statsRepo)
+	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, limits)
 
 	b := &Bot{
 		log:        log,
-		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor),
+		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder),
 	}
 
 	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.withRequestID(b.handleMessage)))
@@ -47,7 +58,7 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 		Commands: []models.BotCommand{
 			{Command: "start", Description: "Open home"},
 			{Command: "log", Description: "Log an activity"},
-			{Command: "stats", Description: "Today stats"},
+			{Command: "stats", Description: "Statistics"},
 			{Command: "help", Description: "How to use the bot"},
 		},
 	})
@@ -85,7 +96,19 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 		return
 	}
 
+	if b.tgHandlers.HandlePendingLocationInput(ctx, bot, update) {
+		return
+	}
+
 	if b.tgHandlers.HandlePendingContextInput(ctx, bot, update) {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingStatsRangeInput(ctx, bot, update) {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingStartedAtInput(ctx, bot, update) {
 		return
 	}
 

@@ -130,6 +130,29 @@ func (r *UserRepo) GetUserID(ctx context.Context, id domain.Identity) (string, e
 	return userID, nil
 }
 
+func (r *UserRepo) UpdateUserTimezone(ctx context.Context, id domain.Identity, timezone string) error {
+	const op = "storage.postgres.UpdateUserTimezone"
+
+	cmdTag, err := r.db.Exec(ctx, `
+		UPDATE users u
+		SET timezone = $1
+		FROM user_identities ui
+		WHERE u.id = ui.user_id
+		  AND ui.provider = $2
+		  AND ui.external_id = $3
+		  AND u.deleted_at IS NULL
+	`, timezone, id.Provider, id.ExternalID)
+	if err != nil {
+		return fmt.Errorf("%s: update timezone: %w", op, err)
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
+	}
+
+	return nil
+}
+
 func (r *UserRepo) GetUserTimezone(ctx context.Context, id domain.Identity) (string, error) {
 	const op = "storage.postgres.GetUserTimezone"
 

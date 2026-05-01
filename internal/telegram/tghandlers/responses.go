@@ -3,6 +3,7 @@ package tghandlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
@@ -35,25 +36,27 @@ func (tg *TgHandlers) sendLogPrompt(ctx context.Context, bot *tgbot.Bot, chatID 
 	return err
 }
 
-func (tg *TgHandlers) sendTodayStats(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
-	markup := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Refresh", CallbackData: callbackTodayStats},
-			},
-			{
-				{Text: "Home", CallbackData: callbackHome},
-			},
-		},
+func fmtMinutes(m int) string {
+	h := m / 60
+	rem := m % 60
+	if h == 0 {
+		return fmt.Sprintf("%dmin", rem)
 	}
+	if rem == 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dh %dmin", h, rem)
+}
 
-	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        "Today: 0 activities logged.\nTop types: n/a.",
-		ReplyMarkup: markup,
-	})
-	return err
+func activityWord(n int) string {
+	if n == 1 {
+		return "1 activity"
+	}
+	return fmt.Sprintf("%d activities", n)
+}
+
+func (tg *TgHandlers) sendTodayStats(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	return tg.sendStatsPicker(ctx, bot, chatID)
 }
 
 func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
@@ -107,6 +110,11 @@ func (tg *TgHandlers) finishSkippedContextFlow(ctx context.Context, bot *tgbot.B
 		return err
 	}
 
+	if tg.isOnboarding(chatID) {
+		tg.clearOnboarding(chatID)
+		tg.setAwaitingLocation(chatID)
+		return tg.sendLocationPrompt(ctx, bot, chatID)
+	}
 	return tg.sendHomeMenu(ctx, bot, chatID)
 }
 
@@ -119,5 +127,49 @@ func (tg *TgHandlers) finishSavedContextFlow(ctx context.Context, bot *tgbot.Bot
 		return err
 	}
 
+	if tg.isOnboarding(chatID) {
+		tg.clearOnboarding(chatID)
+		tg.setAwaitingLocation(chatID)
+		return tg.sendLocationPrompt(ctx, bot, chatID)
+	}
+	return tg.sendHomeMenu(ctx, bot, chatID)
+}
+
+func (tg *TgHandlers) sendLocationPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "Share your location so I can set your timezone automatically.",
+		ReplyMarkup: &models.ReplyKeyboardMarkup{
+			Keyboard: [][]models.KeyboardButton{
+				{{Text: "Share my location", RequestLocation: true}},
+			},
+			ResizeKeyboard:  true,
+			OneTimeKeyboard: true,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "Or skip:",
+		ReplyMarkup: &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{{Text: "Skip", CallbackData: callbackSkipLocation}},
+			},
+		},
+	})
+	return err
+}
+
+func (tg *TgHandlers) finishSkippedLocationFlow(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        "No problem. You can set your timezone from Settings anytime.",
+		ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+	})
+	if err != nil {
+		return err
+	}
 	return tg.sendHomeMenu(ctx, bot, chatID)
 }

@@ -21,13 +21,15 @@ coverage.out
 .env.*
 !.env.example
 
-Taskfile.yaml
-
 docker-compose.dev.yml
 Dockerfile.dev
 
 *.md
 !README.md
+
+/cmd/seed
+/plans
+
 
 /docs
 .claude
