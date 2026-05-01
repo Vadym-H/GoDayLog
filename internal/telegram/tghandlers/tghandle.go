@@ -237,12 +237,6 @@ func (tg *TgHandlers) consumeAwaitingStatsRange(chatID int64) bool {
 	return true
 }
 
-func (tg *TgHandlers) clearAwaitingStatsRange(chatID int64) {
-	tg.pendingMu.Lock()
-	delete(tg.awaitingStatsRange, chatID)
-	tg.pendingMu.Unlock()
-}
-
 func (tg *TgHandlers) setPendingStats(chatID int64, s *pendingStatsState) {
 	tg.pendingMu.Lock()
 	tg.pendingStats[chatID] = s
