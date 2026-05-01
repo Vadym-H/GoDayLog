@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
+	"github.com/Vadym-H/GoDayLog/internal/config"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 )
 
@@ -29,6 +30,7 @@ type AIAnalysisClient interface {
 
 type StatsAILogRepository interface {
 	CreateStatsAILog(ctx context.Context, userID, model string, usage ai.TokenUsage) error
+	SumTokensSince(ctx context.Context, userID string, since time.Time) (int, error)
 }
 
 type StatsAnalyser struct {
@@ -36,10 +38,11 @@ type StatsAnalyser struct {
 	repo      ActivityEntryRepository
 	ai        AIAnalysisClient
 	aiLogRepo StatsAILogRepository
+	limits    config.LLMUsageLimits
 }
 
-func NewStatsAnalyser(log *slog.Logger, repo ActivityEntryRepository, aiClient AIAnalysisClient, aiLogRepo StatsAILogRepository) *StatsAnalyser {
-	return &StatsAnalyser{log: log, repo: repo, ai: aiClient, aiLogRepo: aiLogRepo}
+func NewStatsAnalyser(log *slog.Logger, repo ActivityEntryRepository, aiClient AIAnalysisClient, aiLogRepo StatsAILogRepository, limits config.LLMUsageLimits) *StatsAnalyser {
+	return &StatsAnalyser{log: log, repo: repo, ai: aiClient, aiLogRepo: aiLogRepo, limits: limits}
 }
 
 func (a *StatsAnalyser) Analyse(ctx context.Context, q StatsQuery, report StatsReport, userContext string) (string, error) {
@@ -52,6 +55,29 @@ func (a *StatsAnalyser) Analyse(ctx context.Context, q StatsQuery, report StatsR
 	}
 
 	prompt := buildAnalysisPrompt(q, report, entries, userContext)
+
+	if a.limits.Enabled && a.limits.MaxInputTokensStats > 0 {
+		if len(prompt)/4 > a.limits.MaxInputTokensStats {
+			return "", ai.ErrInputTooLong
+		}
+	}
+
+	if a.limits.Enabled && a.limits.DailyBudgetTokens > 0 {
+		loc := time.UTC
+		if q.Timezone != "" {
+			if l, err := time.LoadLocation(q.Timezone); err == nil {
+				loc = l
+			}
+		}
+		now := time.Now().In(loc)
+		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+		used, sumErr := a.aiLogRepo.SumTokensSince(ctx, q.UserID, dayStart)
+		if sumErr != nil {
+			log.Warn("could not sum daily tokens, skipping budget check", slog.Any("error", sumErr))
+		} else if used >= a.limits.DailyBudgetTokens {
+			return "", ai.ErrDailyBudgetExceeded
+		}
+	}
 
 	result, err := a.ai.AnalyseStats(ctx, prompt)
 	// Log usage before returning error: client may return partial usage even on failure (e.g. empty choices).

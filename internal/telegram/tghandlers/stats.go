@@ -2,12 +2,14 @@ package tghandlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 	"github.com/Vadym-H/GoDayLog/internal/services"
@@ -354,9 +356,18 @@ func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, ch
 	}, ps.report, userContext)
 	if err != nil {
 		log.Error("stats analysis failed", slog.Any("error", err))
+		var replyText string
+		switch {
+		case errors.Is(err, ai.ErrInputTooLong):
+			replyText = "The selected range contains too many activities to analyse. Try a shorter range."
+		case errors.Is(err, ai.ErrDailyBudgetExceeded):
+			replyText = "You have reached your daily AI usage limit. Try again tomorrow."
+		default:
+			replyText = "Could not generate analysis right now. Please try again."
+		}
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "Could not generate analysis right now. Please try again.",
+			Text:   replyText,
 		})
 		return sendErr
 	}

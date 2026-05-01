@@ -40,7 +40,7 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	limiter := ai.NewLimiterMiddleware(aiClient, log, limits)
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)
 	statsService := services.NewStatsService(log, statsRepo)
-	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo)
+	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, limits)
 
 	b := &Bot{
 		log:        log,
