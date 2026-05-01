@@ -87,6 +87,9 @@ func buildAnalysisPrompt(q StatsQuery, report StatsReport, entries []ActivityEnt
 		sb.WriteString("Period: " + from.Format("2 Jan 2006") + " – " + toDisplay.Format("2 Jan 2006"))
 	}
 
+	now := time.Now().In(loc)
+	sb.WriteString("\nCurrent time: " + now.Format("2 Jan 2006 15:04") + " (" + loc.String() + ")")
+
 	sb.WriteString("\n\nBy type:\n")
 
 	typeOrder := []string{"growth", "routine", "rest", "drain"}

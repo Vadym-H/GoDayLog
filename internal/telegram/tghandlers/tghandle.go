@@ -14,8 +14,13 @@ type userService interface {
 	RegisterUser(ctx context.Context, id domain.Identity) (string, bool, error)
 	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
 	UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error
+	UpdateUserTimezone(ctx context.Context, id domain.Identity, timezone string) error
 	GetUserID(ctx context.Context, id domain.Identity) (string, error)
 	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
+}
+
+type timezoneLookup interface {
+	GetTimezoneName(lng, lat float64) string
 }
 
 type statsService interface {
@@ -61,6 +66,7 @@ type TgHandlers struct {
 	aiProcessor    messageAIProcessor
 	statsService   statsService
 	statsAnalyser  statsAnalyser
+	tzFinder       timezoneLookup
 
 	pendingMu          sync.RWMutex
 	pendingLog         map[int64]struct{}
@@ -69,10 +75,12 @@ type TgHandlers struct {
 	awaitingTag        map[int64]struct{}
 	awaitingStartedAt  map[int64]struct{}
 	awaitingStatsRange map[int64]struct{}
+	awaitingLocation   map[int64]struct{}
+	pendingOnboarding  map[int64]struct{}
 	pendingStats       map[int64]*pendingStatsState
 }
 
-func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService, analyser statsAnalyser) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService, analyser statsAnalyser, tzFinder timezoneLookup) *TgHandlers {
 	return &TgHandlers{
 		log:                log,
 		userService:        userService,
@@ -80,12 +88,15 @@ func New(log *slog.Logger, userService userService, messageService messageServic
 		aiProcessor:        aiProcessor,
 		statsService:       statsService,
 		statsAnalyser:      analyser,
+		tzFinder:           tzFinder,
 		pendingLog:         make(map[int64]struct{}),
 		pendingLlmCtx:      make(map[int64]struct{}),
 		pendingReview:      make(map[int64]*pendingReview),
 		awaitingTag:        make(map[int64]struct{}),
 		awaitingStartedAt:  make(map[int64]struct{}),
 		awaitingStatsRange: make(map[int64]struct{}),
+		awaitingLocation:   make(map[int64]struct{}),
+		pendingOnboarding:  make(map[int64]struct{}),
 		pendingStats:       make(map[int64]*pendingStatsState),
 	}
 }
@@ -248,4 +259,52 @@ func (tg *TgHandlers) clearPendingStats(chatID int64) {
 	tg.pendingMu.Lock()
 	delete(tg.pendingStats, chatID)
 	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) setAwaitingLocation(chatID int64) {
+	tg.pendingMu.Lock()
+	tg.awaitingLocation[chatID] = struct{}{}
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) consumeAwaitingLocation(chatID int64) bool {
+	tg.pendingMu.Lock()
+	defer tg.pendingMu.Unlock()
+	if _, ok := tg.awaitingLocation[chatID]; !ok {
+		return false
+	}
+	delete(tg.awaitingLocation, chatID)
+	return true
+}
+
+func (tg *TgHandlers) clearAwaitingLocation(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.awaitingLocation, chatID)
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) isAwaitingLocation(chatID int64) bool {
+	tg.pendingMu.RLock()
+	defer tg.pendingMu.RUnlock()
+	_, ok := tg.awaitingLocation[chatID]
+	return ok
+}
+
+func (tg *TgHandlers) setOnboarding(chatID int64) {
+	tg.pendingMu.Lock()
+	tg.pendingOnboarding[chatID] = struct{}{}
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) clearOnboarding(chatID int64) {
+	tg.pendingMu.Lock()
+	delete(tg.pendingOnboarding, chatID)
+	tg.pendingMu.Unlock()
+}
+
+func (tg *TgHandlers) isOnboarding(chatID int64) bool {
+	tg.pendingMu.RLock()
+	defer tg.pendingMu.RUnlock()
+	_, ok := tg.pendingOnboarding[chatID]
+	return ok
 }

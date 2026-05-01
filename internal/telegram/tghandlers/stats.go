@@ -70,6 +70,22 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 	sb.WriteString(rangeLabel)
 	sb.WriteString("\n\n")
 
+	// actual activity span inside requested range
+	if report.FirstActivityAt != nil && report.LastActivityAt != nil {
+		fromLocal := report.FirstActivityAt.In(loc)
+		toLocal := report.LastActivityAt.In(loc)
+
+		var spanLabel string
+		if fromLocal.Year() == toLocal.Year() && fromLocal.YearDay() == toLocal.YearDay() {
+			// same day
+			spanLabel = fromLocal.Format("2 Jan 15:04") + " – " + toLocal.Format("15:04")
+		} else {
+			spanLabel = fromLocal.Format("2 Jan 15:04") + " – " + toLocal.Format("2 Jan 15:04")
+		}
+
+		sb.WriteString(fmt.Sprintf("Active period: %s\n\n", spanLabel))
+	}
+
 	if report.TotalCount == 0 {
 		sb.WriteString("No activities logged.")
 	} else {

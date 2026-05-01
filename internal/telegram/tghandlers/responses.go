@@ -110,6 +110,11 @@ func (tg *TgHandlers) finishSkippedContextFlow(ctx context.Context, bot *tgbot.B
 		return err
 	}
 
+	if tg.isOnboarding(chatID) {
+		tg.clearOnboarding(chatID)
+		tg.setAwaitingLocation(chatID)
+		return tg.sendLocationPrompt(ctx, bot, chatID)
+	}
 	return tg.sendHomeMenu(ctx, bot, chatID)
 }
 
@@ -122,5 +127,49 @@ func (tg *TgHandlers) finishSavedContextFlow(ctx context.Context, bot *tgbot.Bot
 		return err
 	}
 
+	if tg.isOnboarding(chatID) {
+		tg.clearOnboarding(chatID)
+		tg.setAwaitingLocation(chatID)
+		return tg.sendLocationPrompt(ctx, bot, chatID)
+	}
+	return tg.sendHomeMenu(ctx, bot, chatID)
+}
+
+func (tg *TgHandlers) sendLocationPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "Share your location so I can set your timezone automatically.",
+		ReplyMarkup: &models.ReplyKeyboardMarkup{
+			Keyboard: [][]models.KeyboardButton{
+				{{Text: "Share my location", RequestLocation: true}},
+			},
+			ResizeKeyboard:  true,
+			OneTimeKeyboard: true,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "Or skip:",
+		ReplyMarkup: &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{{Text: "Skip", CallbackData: callbackSkipLocation}},
+			},
+		},
+	})
+	return err
+}
+
+func (tg *TgHandlers) finishSkippedLocationFlow(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        "No problem. You can set your timezone from Settings anytime.",
+		ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+	})
+	if err != nil {
+		return err
+	}
 	return tg.sendHomeMenu(ctx, bot, chatID)
 }

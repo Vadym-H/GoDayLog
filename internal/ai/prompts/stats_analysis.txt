@@ -20,6 +20,12 @@ Focus on:
 
 Only highlight issues when they represent a structural pattern that would realistically impact the user’s goals.
 
+If the period includes the current day, compare it with "Current time" to determine whether the period is still in progress.
+
+- If the period is still ongoing, treat the analysis as partial and include forward-looking observations.
+- Focus on how the remaining time can still be used, not just what has already happened.
+- Do not evaluate the period as final or complete.
+
 STYLE:
 - Max 250 words total.
 - Short paragraphs only, no bullet points.

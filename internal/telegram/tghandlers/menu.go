@@ -18,6 +18,9 @@ const (
 	callbackCancelLog     = callbackActionPrefix + "cancel_log"
 	callbackSkipContext   = callbackActionPrefix + "skip_context"
 	callbackUpdateContext = callbackActionPrefix + "update_context"
+	callbackSettings      = callbackActionPrefix + "settings"
+	callbackSetTimezone   = callbackActionPrefix + "set_timezone"
+	callbackSkipLocation  = callbackActionPrefix + "skip_location"
 )
 
 // HandleMenu sends the home screen with inline actions.
@@ -40,10 +43,33 @@ func mainMenuMarkup() *models.InlineKeyboardMarkup {
 			},
 			{
 				{Text: "Help", CallbackData: callbackHelp},
-				{Text: "Update context", CallbackData: callbackUpdateContext},
+				{Text: "Settings", CallbackData: callbackSettings},
 			},
 		},
 	}
+}
+
+func settingsMenuMarkup() *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "Update context", CallbackData: callbackUpdateContext},
+				{Text: "Set timezone", CallbackData: callbackSetTimezone},
+			},
+			{
+				{Text: "Back", CallbackData: callbackHome},
+			},
+		},
+	}
+}
+
+func (tg *TgHandlers) sendSettingsMenu(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        "Settings:",
+		ReplyMarkup: settingsMenuMarkup(),
+	})
+	return err
 }
 
 func (tg *TgHandlers) sendHomeMenu(ctx context.Context, bot *tgbot.Bot, chatID int64) error {

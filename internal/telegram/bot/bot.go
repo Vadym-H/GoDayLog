@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
@@ -12,6 +13,7 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/telegram/tghandlers"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/ringsaturn/tzf"
 )
 
 type Bot struct {
@@ -21,6 +23,11 @@ type Bot struct {
 }
 
 func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client, limits config.LLMUsageLimits) (*Bot, error) {
+	tzFinder, err := tzf.NewDefaultFinder()
+	if err != nil {
+		return nil, fmt.Errorf("init timezone finder: %w", err)
+	}
+
 	userRepo := storage.NewUserRepo(db)
 	messageRepo := storage.NewMessageRepo(db)
 	activityLogRepo := storage.NewActivityLogRepo(db)
@@ -37,7 +44,7 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 
 	b := &Bot{
 		log:        log,
-		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser),
+		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder),
 	}
 
 	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.withRequestID(b.handleMessage)))
@@ -86,6 +93,10 @@ func (b *Bot) withRequestID(h func(context.Context, *tgbot.Bot, *models.Update))
 
 func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
 	if update.Message == nil {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingLocationInput(ctx, bot, update) {
 		return
 	}
 

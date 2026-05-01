@@ -193,6 +193,24 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 
 	case data == callbackStatsAnalyse:
 		err = tg.handleStatsAnalyse(ctx, bot, chatID)
+
+	case data == callbackSettings:
+		tg.clearAwaitingLog(chatID)
+		tg.clearAwaitingContext(chatID)
+		err = tg.sendSettingsMenu(ctx, bot, chatID)
+
+	case data == callbackSetTimezone:
+		tg.clearAwaitingLog(chatID)
+		tg.clearAwaitingContext(chatID)
+		tg.setAwaitingLocation(chatID)
+		err = tg.sendLocationPrompt(ctx, bot, chatID)
+
+	case data == callbackSkipLocation:
+		if !tg.isAwaitingLocation(chatID) {
+			return
+		}
+		tg.clearAwaitingLocation(chatID)
+		err = tg.finishSkippedLocationFlow(ctx, bot, chatID)
 	}
 
 	if err != nil {
@@ -411,6 +429,60 @@ func (tg *TgHandlers) HandlePendingContextInput(ctx context.Context, bot *tgbot.
 		log.Error("failed to finish context flow", slog.Any("error", err))
 	}
 
+	return true
+}
+
+func (tg *TgHandlers) HandlePendingLocationInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
+	if update.Message == nil || update.Message.Location == nil {
+		return false
+	}
+
+	chatID := update.Message.Chat.ID
+	if !tg.consumeAwaitingLocation(chatID) {
+		return false
+	}
+	log := logger.From(ctx, tg.log)
+
+	tzName := tg.tzFinder.GetTimezoneName(update.Message.Location.Longitude, update.Message.Location.Latitude)
+	if tzName == "" {
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:      chatID,
+			Text:        "Could not detect timezone from your location. Please try again or skip.",
+			ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+		})
+		if err != nil {
+			log.Error("failed to send timezone detection error", slog.Any("error", err))
+		}
+		return true
+	}
+
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
+	if err := tg.userService.UpdateUserTimezone(ctx, identity, tzName); err != nil {
+		log.Error("failed to update timezone", slog.Any("error", err))
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:      chatID,
+			Text:        "Could not save your timezone. Please try again.",
+			ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+		})
+		if sendErr != nil {
+			log.Error("failed to send timezone save error", slog.Any("error", sendErr))
+		}
+		return true
+	}
+
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        "Timezone set to " + tzName + ".",
+		ReplyMarkup: &models.ReplyKeyboardRemove{RemoveKeyboard: true},
+	})
+	if err != nil {
+		log.Error("failed to send timezone confirmation", slog.Any("error", err))
+		return true
+	}
+
+	if err := tg.sendHomeMenu(ctx, bot, chatID); err != nil {
+		log.Error("failed to send home menu after timezone set", slog.Any("error", err))
+	}
 	return true
 }
 

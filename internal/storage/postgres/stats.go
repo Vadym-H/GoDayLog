@@ -25,7 +25,9 @@ func (r *StatsRepo) GetStats(ctx context.Context, q services.StatsQuery) (servic
 			activity_type,
 			COUNT(*)                                         AS count,
 			COALESCE(SUM(duration_minutes), 0)               AS total_minutes,
-			COUNT(*) FILTER (WHERE duration_minutes IS NULL) AS untracked_count
+			COUNT(*) FILTER (WHERE duration_minutes IS NULL) AS untracked_count,
+			MIN(MIN(COALESCE(started_at, created_at))) OVER () AS first_activity,
+			MAX(MAX(COALESCE(started_at, created_at))) OVER () AS last_activity
 		FROM activity_logs
 		WHERE user_id    = $1
 		  AND deleted_at IS NULL
@@ -40,11 +42,17 @@ func (r *StatsRepo) GetStats(ctx context.Context, q services.StatsQuery) (servic
 
 	typeMap := make(map[string]services.TypeSummary, 4)
 	var totalCount, totalMinutes, totalUntracked int
+	var firstActivity, lastActivity *time.Time
 
 	for rows.Next() {
 		var ts services.TypeSummary
-		if err := rows.Scan(&ts.Type, &ts.Count, &ts.TotalMinutes, &ts.UntrackedCount); err != nil {
+		var rowFirst, rowLast *time.Time
+		if err := rows.Scan(&ts.Type, &ts.Count, &ts.TotalMinutes, &ts.UntrackedCount, &rowFirst, &rowLast); err != nil {
 			return services.StatsReport{}, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		if firstActivity == nil {
+			firstActivity = rowFirst
+			lastActivity = rowLast
 		}
 		typeMap[ts.Type] = ts
 		totalCount += ts.Count
@@ -113,7 +121,7 @@ func (r *StatsRepo) GetStats(ctx context.Context, q services.StatsQuery) (servic
 			  AND COALESCE(started_at, created_at) >= $2
 			  AND COALESCE(started_at, created_at) <  $3
 			GROUP BY day, activity_type
-			ORDER BY day ASC
+			ORDER BY day
 		`, q.UserID, q.From, q.To, tz)
 		if err != nil {
 			return services.StatsReport{}, fmt.Errorf("%s: day query: %w", op, err)
@@ -147,15 +155,16 @@ func (r *StatsRepo) GetStats(ctx context.Context, q services.StatsQuery) (servic
 			byDay[i] = *dayMap[d]
 		}
 	}
-
 	return services.StatsReport{
-		From:           q.From,
-		To:             q.To,
-		TotalCount:     totalCount,
-		TotalMinutes:   totalMinutes,
-		UntrackedCount: totalUntracked,
-		ByType:         byType,
-		TopTags:        topTags,
-		ByDay:          byDay,
+		From:            q.From,
+		To:              q.To,
+		FirstActivityAt: firstActivity,
+		LastActivityAt:  lastActivity,
+		TotalCount:      totalCount,
+		TotalMinutes:    totalMinutes,
+		UntrackedCount:  totalUntracked,
+		ByType:          byType,
+		TopTags:         topTags,
+		ByDay:           byDay,
 	}, nil
 }

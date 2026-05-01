@@ -37,30 +37,32 @@ type DaySummary struct {
 }
 
 type StatsReport struct {
-	From           time.Time
-	To             time.Time
-	TotalCount     int
-	TotalMinutes   int
-	UntrackedCount int
-	ByType         []TypeSummary
-	TopTags        []TagSummary
-	ByDay          []DaySummary
+	From            time.Time
+	To              time.Time
+	FirstActivityAt *time.Time
+	LastActivityAt  *time.Time
+	TotalCount      int
+	TotalMinutes    int
+	UntrackedCount  int
+	ByType          []TypeSummary
+	TopTags         []TagSummary
+	ByDay           []DaySummary
 }
 
 type StatsRepository interface {
 	GetStats(ctx context.Context, q StatsQuery) (StatsReport, error)
 }
 
-type statsService struct {
+type StatsService struct {
 	log  *slog.Logger
 	repo StatsRepository
 }
 
-func NewStatsService(log *slog.Logger, repo StatsRepository) *statsService {
-	return &statsService{log: log, repo: repo}
+func NewStatsService(log *slog.Logger, repo StatsRepository) *StatsService {
+	return &StatsService{log: log, repo: repo}
 }
 
-func (s *statsService) GetStats(ctx context.Context, q StatsQuery) (StatsReport, error) {
+func (s *StatsService) GetStats(ctx context.Context, q StatsQuery) (StatsReport, error) {
 	report, err := s.repo.GetStats(ctx, q)
 	if err != nil {
 		logger.From(ctx, s.log).Error("stats query failed", slog.Any("error", err))
