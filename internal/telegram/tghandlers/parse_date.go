@@ -30,7 +30,7 @@ func parseStartedAt(input string, now time.Time) (time.Time, error) {
 	s := strings.ToLower(strings.TrimSpace(input))
 
 	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
-		if t, err := time.ParseInLocation(layout, s, time.UTC); err == nil {
+		if t, err := time.ParseInLocation(layout, s, now.Location()); err == nil {
 			return t, nil
 		}
 	}
@@ -38,7 +38,7 @@ func parseStartedAt(input string, now time.Time) (time.Time, error) {
 		return t.UTC(), nil
 	}
 
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	parts := strings.Fields(s)
 
 	var base time.Time
@@ -70,7 +70,7 @@ func parseStartedAt(input string, now time.Time) (time.Time, error) {
 		day, err := strconv.Atoi(dayStr)
 		if err == nil {
 			if m, ok := monthNames[parts[1]]; ok {
-				base = time.Date(now.Year(), m, day, 0, 0, 0, 0, time.UTC)
+				base = time.Date(now.Year(), m, day, 0, 0, 0, 0, now.Location())
 				return applyTime(base, parts[2:]), nil
 			}
 		}
@@ -91,7 +91,7 @@ func applyTime(base time.Time, parts []string) time.Time {
 	}
 	for _, layout := range []string{"15:04:05", "15:04"} {
 		if t, err := time.Parse(layout, parts[0]); err == nil {
-			return time.Date(base.Year(), base.Month(), base.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
+			return time.Date(base.Year(), base.Month(), base.Day(), t.Hour(), t.Minute(), t.Second(), 0, base.Location())
 		}
 	}
 	return base

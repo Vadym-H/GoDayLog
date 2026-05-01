@@ -192,7 +192,7 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 		})
 
 	case data == callbackStatsAnalyse:
-		err = tg.handleStatsAnalyse(ctx, bot, chatID)
+		err = tg.handleStatsAnalyse(ctx, bot, chatID, update.CallbackQuery.From.ID)
 
 	case data == callbackSettings:
 		tg.clearAwaitingLog(chatID)
@@ -515,7 +515,12 @@ func (tg *TgHandlers) HandlePendingStartedAtInput(ctx context.Context, bot *tgbo
 		return true
 	}
 
-	t, err := parseStartedAt(text, time.Now().UTC())
+	tzName, _ := tg.userService.GetUserTimezone(ctx, domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)})
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		loc = time.UTC
+	}
+	t, err := parseStartedAt(text, time.Now().In(loc))
 	if err != nil {
 		tg.setAwaitingStartedAt(chatID)
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{

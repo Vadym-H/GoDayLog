@@ -311,7 +311,7 @@ func (tg *TgHandlers) HandlePendingStatsRangeInput(ctx context.Context, bot *tgb
 	return true
 }
 
-func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, chatID int64, senderID int64) error {
 	ps := tg.getPendingStats(chatID)
 	if ps == nil {
 		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -322,7 +322,7 @@ func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, ch
 	}
 
 	log := logger.From(ctx, tg.log)
-	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(senderID, 10)}
 
 	userID, err := tg.userService.GetUserID(ctx, identity)
 	if err != nil {
