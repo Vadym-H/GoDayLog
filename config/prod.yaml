@@ -9,12 +9,12 @@ database:
   user: ""      # set via env
   password: ""  # set via env
   name: ""      # set via env
-  sslmode: "require"
+  sslmode: "disable"
 
 llm:
   provider: "openai"
   api_key: ""   # set via env
-  model: "gpt-3.5-turbo"
+  model: "gpt-5.4-mini"
   timeout: 30s
   limits:
     enabled: true                   # false in local.yaml, true in prod.yaml
