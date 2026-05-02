@@ -203,6 +203,13 @@ func (tg *TgHandlers) HandleMenuAction(ctx context.Context, bot *tgbot.Bot, upda
 		tg.clearAwaitingLog(chatID)
 		tg.clearAwaitingContext(chatID)
 		tg.setAwaitingLocation(chatID)
+		identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(chatID, 10)}
+		if currentTZ, tzErr := tg.userService.GetUserTimezone(ctx, identity); tzErr == nil && currentTZ != "" {
+			bot.SendMessage(ctx, &tgbot.SendMessageParams{ //nolint
+				ChatID: chatID,
+				Text:   fmt.Sprintf("Current timezone: %s\n\nThe bot uses it to show your stats in local time and to correctly parse times like \"today 14:00\".", currentTZ),
+			})
+		}
 		err = tg.sendLocationPrompt(ctx, bot, chatID)
 
 	case data == callbackSkipLocation:
