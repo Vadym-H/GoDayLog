@@ -20,7 +20,7 @@ services:
       retries: 10
 
   daylog:
-    build: .
+    image: ghcr.io/vadym-h/godaylog:latest
     container_name: daylog-app
     restart: unless-stopped
     environment:
