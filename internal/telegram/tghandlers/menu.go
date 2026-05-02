@@ -4,35 +4,79 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
-// HandleMenu sends a simple inline keyboard menu for testing.
-// Command: /menu
+const (
+	callbackActionPrefix  = "action:"
+	callbackLogActivity   = callbackActionPrefix + "log"
+	callbackStatsPicker   = callbackActionPrefix + "stats"
+	callbackHelp          = callbackActionPrefix + "help"
+	callbackHome          = callbackActionPrefix + "home"
+	callbackCancelLog     = callbackActionPrefix + "cancel_log"
+	callbackSkipContext   = callbackActionPrefix + "skip_context"
+	callbackUpdateContext = callbackActionPrefix + "update_context"
+	callbackSettings      = callbackActionPrefix + "settings"
+	callbackSetTimezone   = callbackActionPrefix + "set_timezone"
+	callbackSkipLocation  = callbackActionPrefix + "skip_location"
+)
+
+// HandleMenu sends the home screen with inline actions.
 func (tg *TgHandlers) HandleMenu(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
 	if update.Message == nil {
 		return
 	}
 
-	keyboard := [][]models.InlineKeyboardButton{
-		{
-			{Text: "Option 1", CallbackData: "opt1"},
-			{Text: "Option 2", CallbackData: "opt2"},
-		},
-		{
-			{Text: "Option 3", CallbackData: "opt3"},
+	if err := tg.sendHomeMenu(ctx, bot, update.Message.Chat.ID); err != nil {
+		logger.From(ctx, tg.log).Error("failed to send menu", slog.Any("error", err))
+	}
+}
+
+func mainMenuMarkup() *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "Log activity", CallbackData: callbackLogActivity},
+				{Text: "Statistics", CallbackData: callbackStatsPicker},
+			},
+			{
+				{Text: "Help", CallbackData: callbackHelp},
+				{Text: "Settings", CallbackData: callbackSettings},
+			},
 		},
 	}
+}
 
-	markup := &models.InlineKeyboardMarkup{InlineKeyboard: keyboard}
+func settingsMenuMarkup() *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "Update context", CallbackData: callbackUpdateContext},
+				{Text: "Set timezone", CallbackData: callbackSetTimezone},
+			},
+			{
+				{Text: "Back", CallbackData: callbackHome},
+			},
+		},
+	}
+}
 
+func (tg *TgHandlers) sendSettingsMenu(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      update.Message.Chat.ID,
-		Text:        "Choose an option:",
-		ReplyMarkup: markup,
+		ChatID:      chatID,
+		Text:        "Settings:",
+		ReplyMarkup: settingsMenuMarkup(),
 	})
-	if err != nil {
-		tg.log.Error("failed to send menu", slog.String("error", err.Error()))
-	}
+	return err
+}
+
+func (tg *TgHandlers) sendHomeMenu(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
+	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        "What would you like to do?",
+		ReplyMarkup: mainMenuMarkup(),
+	})
+	return err
 }

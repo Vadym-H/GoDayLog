@@ -1,0 +1,42 @@
+version: '3'
+
+vars:
+  COMPOSE: docker-compose.yml
+  ENV_FILE: .env
+  DB_URL: "postgres://admin:prodpassword@localhost:5433/daylog_db_prod?sslmode=disable"
+
+tasks:
+  up:
+    desc: Start prod
+    cmds:
+      - docker-compose -f {{.COMPOSE}} --env-file {{.ENV_FILE}} up -d
+
+  down:
+    desc: Stop prod
+    cmds:
+      - docker-compose -f {{.COMPOSE}} --env-file {{.ENV_FILE}} down
+
+  build:
+    desc: Rebuild and restart prod
+    cmds:
+      - docker-compose -f {{.COMPOSE}} --env-file {{.ENV_FILE}} up -d --build
+
+  logs:
+    desc: Follow app logs
+    cmds:
+      - docker-compose -f {{.COMPOSE}} logs -f daylog
+
+  db:
+    desc: psql into prod postgres
+    cmds:
+      - docker exec -it daylog-postgres psql -U admin -d daylog_db_prod
+
+  migrate:up:
+    desc: Run migrations
+    cmds:
+      - go run ./cmd/migrate -database-url="{{.DB_URL}}" -migrations-path=./migrations -direction=up
+
+  migrate:down:
+    desc: Rollback last migration
+    cmds:
+      - go run ./cmd/migrate -database-url="{{.DB_URL}}" -migrations-path=./migrations -direction=down

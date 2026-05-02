@@ -2,10 +2,11 @@ package tghandlers
 
 import (
 	"context"
-	"errors"
 	"log/slog"
+	"strconv"
 
-	"github.com/Vadym-H/GoDayLog/internal/storage"
+	"github.com/Vadym-H/GoDayLog/internal/domain"
+	"github.com/Vadym-H/GoDayLog/internal/logger"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -14,33 +15,36 @@ func (tg *TgHandlers) HandleStart(ctx context.Context, bot *tgbot.Bot, update *m
 	if update.Message == nil {
 		return
 	}
+	log := logger.From(ctx, tg.log)
 
 	user := update.Message.From
 	chatID := update.Message.Chat.ID
+	tg.clearAwaitingLog(chatID)
+	tg.clearAwaitingContext(chatID)
+	tg.clearAwaitingLocation(chatID)
+	tg.clearOnboarding(chatID)
 
-	err := tg.userService.RegisterUser(ctx, user.ID, user.Username, user.FirstName)
+	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(user.ID, 10)}
+	_, isNewUser, err := tg.userService.RegisterUser(ctx, identity)
 	if err != nil {
-		if errors.Is(err, storage.UserExists) {
-			// If user already exists, show menu instead of a generic welcome.
-			tg.HandleMenu(ctx, bot, update)
-			return
-		}
-		tg.log.Error("failed to create user", slog.String("error", err.Error()))
-		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "something went wrong, please try again",
 		})
-		if err != nil {
-			tg.log.Error("failed to send error message", slog.String("error", err.Error()))
+		if sendErr != nil {
+			log.Error("failed to send error message", slog.Any("error", sendErr))
 		}
 		return
 	}
 
-	_, err = bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "hey " + user.FirstName + "! send me what you did and I'll log it\n\nexample: \"studied Go for 2 hours\"",
-	})
-	if err != nil {
-		tg.log.Error("failed to send welcome message", slog.String("error", err.Error()))
+	if isNewUser {
+		tg.setOnboarding(chatID)
+		tg.setAwaitingContext(chatID)
+		if err = tg.sendContextPrompt(ctx, bot, chatID); err != nil {
+			log.Error("failed to send context prompt", slog.Any("error", err))
+		}
+		return
 	}
+
+	tg.HandleMenu(ctx, bot, update)
 }

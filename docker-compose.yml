@@ -24,7 +24,7 @@ services:
     container_name: daylog-app
     restart: unless-stopped
     environment:
-      CONFIG_PATH: /app/config/local.yaml
+      CONFIG_PATH: /app/config/prod.yaml
 
       #override
       DB_HOST: postgres

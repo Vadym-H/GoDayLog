@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -35,10 +35,20 @@ type Database struct {
 }
 
 type LLMConfig struct {
-	Provider string        `yaml:"provider" env:"LLM_PROVIDER" env-default:"openai"`
-	Model    string        `yaml:"model" env:"LLM_MODEL" env-default:"gpt-3.5-turbo"`
-	Timeout  time.Duration `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
-	APIKey   string        `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`
+	Provider  string         `yaml:"provider" env:"LLM_PROVIDER" env-default:"openai"`
+	BaseURL   string         `yaml:"base_url" env:"LLM_BASE_URL" env-default:"https://api.openai.com/v1"`
+	Model     string         `yaml:"model" env:"LLM_MODEL" env-default:"gpt-3.5-turbo"`
+	Timeout   time.Duration  `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
+	APIKey    string         `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`
+	LLMLimits LLMUsageLimits `yaml:"limits"`
+}
+
+type LLMUsageLimits struct {
+	Enabled                  bool `yaml:"enabled" env:"LLM_LIMITS_ENABLED" env-default:"false"`
+	MaxInputTokensActivities int  `yaml:"max_input_tokens_activities" env:"LLM_LIMITS_MAX_INPUT_TOKENS_ACTIVITIES" env-default:"2000"`
+	MaxInputTokensStats      int  `yaml:"max_input_tokens_stats" env:"LLM_LIMITS_MAX_INPUT_TOKENS_STATS" env-default:"8000"`
+	DailyBudgetTokens        int  `yaml:"daily_budget_tokens" env:"LLM_LIMITS_DAILY_BUDGET_TOKENS" env-default:"0"`
+	MaxContextChars          int  `yaml:"max_context_chars" env:"LLM_LIMITS_MAX_CONTEXT_CHARS" env-default:"0"`
 }
 
 type HTTPServer struct {
@@ -47,25 +57,27 @@ type HTTPServer struct {
 	IdleTimeout time.Duration `yaml:"idle_timeout" env:"SERVER_IDLE_TIMEOUT" env-default:"120s"`
 }
 
-func MustLoad() *Config {
-	// Load .env file
+func MustLoad(log *slog.Logger) *Config {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
+		log.Debug("no .env file found, using system environment variables")
 	}
 
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
-		log.Fatal("CONFIG_PATH is not set")
+		log.Error("CONFIG_PATH is not set")
+		os.Exit(1)
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Fatalf("Config file %s does not found", configPath)
+		log.Error("config file not found", slog.String("path", configPath))
+		os.Exit(1)
 	}
 
 	var cfg Config
 
 	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
-		log.Fatalf("Failed to load config: %s", err)
+		log.Error("failed to load config", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	dbURL := url.URL{
