@@ -26,8 +26,8 @@ func (r *StatsRepo) GetStats(ctx context.Context, q services.StatsQuery) (servic
 			COUNT(*)                                         AS count,
 			COALESCE(SUM(duration_minutes), 0)               AS total_minutes,
 			COUNT(*) FILTER (WHERE duration_minutes IS NULL) AS untracked_count,
-			MIN(MIN(COALESCE(started_at, created_at))) OVER () AS first_activity,
-			MAX(MAX(COALESCE(started_at, created_at))) OVER () AS last_activity
+			MIN(MIN(COALESCE(started_at, created_at)))           OVER () AS first_activity,
+			MAX(MAX(COALESCE(completed_at, created_at)))         OVER () AS last_activity
 		FROM activity_logs
 		WHERE user_id    = $1
 		  AND deleted_at IS NULL
