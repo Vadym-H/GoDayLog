@@ -16,10 +16,11 @@ tasks:
     cmds:
       - docker-compose -f {{.COMPOSE}} --env-file {{.ENV_FILE}} down
 
-  build:
-    desc: Rebuild and restart prod
+  deploy:
+    desc: Pull latest image and restart
     cmds:
-      - docker-compose -f {{.COMPOSE}} --env-file {{.ENV_FILE}} up -d --build
+      - docker-compose -f {{.COMPOSE}} --env-file {{.ENV_FILE}} pull
+      - docker-compose -f {{.COMPOSE}} --env-file {{.ENV_FILE}} up -d
 
   logs:
     desc: Follow app logs
