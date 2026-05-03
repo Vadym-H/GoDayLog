@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/config"
@@ -16,10 +17,15 @@ import (
 	"github.com/ringsaturn/tzf"
 )
 
+type staleCleaner interface {
+	MarkStalePendingMessagesFailed(ctx context.Context, cutoff time.Time) error
+}
+
 type Bot struct {
-	tg         *tgbot.Bot
-	log        *slog.Logger
-	tgHandlers *tghandlers.TgHandlers
+	tg           *tgbot.Bot
+	log          *slog.Logger
+	tgHandlers   *tghandlers.TgHandlers
+	staleCleaner staleCleaner
 }
 
 func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client, limits config.LLMUsageLimits) (*Bot, error) {
@@ -43,8 +49,9 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, limits)
 
 	b := &Bot{
-		log:        log,
-		tgHandlers: tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder),
+		log:          log,
+		tgHandlers:   tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder),
+		staleCleaner: messageRepo,
 	}
 
 	tg, err := tgbot.New(token, tgbot.WithDefaultHandler(b.withRequestID(b.handleMessage)))
@@ -76,9 +83,32 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 }
 
 func (b *Bot) Start(ctx context.Context) {
+	go b.runStaleCleaner(ctx)
 	b.log.Info("telegram bot started")
 	b.tg.Start(ctx)
 	b.log.Info("telegram bot stopped")
+}
+
+func (b *Bot) runStaleCleaner(ctx context.Context) {
+	const staleness = 10 * time.Minute
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	b.cleanStale(ctx, staleness)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			b.cleanStale(ctx, staleness)
+		}
+	}
+}
+
+func (b *Bot) cleanStale(ctx context.Context, staleness time.Duration) {
+	if err := b.staleCleaner.MarkStalePendingMessagesFailed(ctx, time.Now().Add(-staleness)); err != nil {
+		b.log.Warn("stale pending cleaner error", slog.Any("error", err))
+	}
 }
 
 // withRequestID stamps a fresh request ID onto ctx before dispatching to any handler.

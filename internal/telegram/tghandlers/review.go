@@ -2,6 +2,7 @@ package tghandlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
+	"github.com/Vadym-H/GoDayLog/internal/storage"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -37,6 +39,21 @@ func (tg *TgHandlers) handleReviewAccept(ctx context.Context, bot *tgbot.Bot, ch
 	r.mu.Unlock()
 
 	if err := tg.aiProcessor.SaveActivities(ctx, messageID, activities); err != nil {
+		tg.clearAwaitingTag(chatID)
+		tg.clearAwaitingStartedAt(chatID)
+		tg.clearPendingReview(chatID)
+
+		if errors.Is(err, storage.ErrMessageFailed) {
+			_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "Your session expired (pending too long). Please log your activity again.",
+			})
+			if sendErr != nil {
+				return sendErr
+			}
+			return tg.sendHomeMenu(ctx, bot, chatID)
+		}
+
 		logger.From(ctx, tg.log).Error("failed to save activities", slog.Any("error", err))
 		_, sendErr := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
