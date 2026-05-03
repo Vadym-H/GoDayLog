@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,6 +27,18 @@ func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID stri
 		return fmt.Errorf("%s: begin: %w", op, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	var msgStatus string
+	err = tx.QueryRow(ctx, `SELECT status FROM messages WHERE id = $1`, messageID).Scan(&msgStatus)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%s: %w", op, storage.ErrMessageNotFound)
+		}
+		return fmt.Errorf("%s: check message status: %w", op, err)
+	}
+	if msgStatus == MessageStatusFailed {
+		return fmt.Errorf("%s: %w", op, storage.ErrMessageFailed)
+	}
 
 	for _, a := range items {
 		result, err := tx.Exec(ctx, `

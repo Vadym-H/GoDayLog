@@ -68,6 +68,44 @@ func (r *UserRepo) CreateUser(ctx context.Context, id domain.Identity) (string, 
 	return userID, true, nil
 }
 
+func (r *UserRepo) GetUserPlan(ctx context.Context, userID string) (string, error) {
+	const op = "storage.postgres.GetUserPlan"
+
+	var plan string
+	err := r.db.QueryRow(ctx,
+		`SELECT plan FROM users WHERE id = $1 AND deleted_at IS NULL`,
+		userID,
+	).Scan(&plan)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
+		}
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+
+	return plan, nil
+}
+
+func (r *UserRepo) GetUserPlanByIdentity(ctx context.Context, id domain.Identity) (string, error) {
+	const op = "storage.postgres.GetUserPlanByIdentity"
+
+	var plan string
+	err := r.db.QueryRow(ctx, `
+		SELECT u.plan
+		FROM users u
+		JOIN user_identities ui ON ui.user_id = u.id
+		WHERE ui.provider = $1 AND ui.external_id = $2 AND u.deleted_at IS NULL
+	`, id.Provider, id.ExternalID).Scan(&plan)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
+		}
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+
+	return plan, nil
+}
+
 func (r *UserRepo) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
 	const op = "storage.postgres.UpdateUserContext"
 

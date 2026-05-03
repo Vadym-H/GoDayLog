@@ -33,16 +33,22 @@ type StatsAILogRepository interface {
 	SumTokensSince(ctx context.Context, userID string, since time.Time) (int, error)
 }
 
-type StatsAnalyser struct {
-	log       *slog.Logger
-	repo      ActivityEntryRepository
-	ai        AIAnalysisClient
-	aiLogRepo StatsAILogRepository
-	limits    config.LLMUsageLimits
+type UserPlanReader interface {
+	GetUserPlan(ctx context.Context, userID string) (string, error)
 }
 
-func NewStatsAnalyser(log *slog.Logger, repo ActivityEntryRepository, aiClient AIAnalysisClient, aiLogRepo StatsAILogRepository, limits config.LLMUsageLimits) *StatsAnalyser {
-	return &StatsAnalyser{log: log, repo: repo, ai: aiClient, aiLogRepo: aiLogRepo, limits: limits}
+type StatsAnalyser struct {
+	log        *slog.Logger
+	repo       ActivityEntryRepository
+	ai         AIAnalysisClient
+	aiLogRepo  StatsAILogRepository
+	planReader UserPlanReader
+	limits     config.LLMUsageLimits
+	proLimits  config.LLMUsageLimits
+}
+
+func NewStatsAnalyser(log *slog.Logger, repo ActivityEntryRepository, aiClient AIAnalysisClient, aiLogRepo StatsAILogRepository, planReader UserPlanReader, limits config.LLMUsageLimits, proLimits config.LLMUsageLimits) *StatsAnalyser {
+	return &StatsAnalyser{log: log, repo: repo, ai: aiClient, aiLogRepo: aiLogRepo, planReader: planReader, limits: limits, proLimits: proLimits}
 }
 
 func (a *StatsAnalyser) Analyse(ctx context.Context, q StatsQuery, report StatsReport, userContext string) (string, error) {
@@ -56,13 +62,24 @@ func (a *StatsAnalyser) Analyse(ctx context.Context, q StatsQuery, report StatsR
 
 	prompt := buildAnalysisPrompt(q, report, entries, userContext)
 
-	if a.limits.Enabled && a.limits.MaxInputTokensStats > 0 {
-		if len(prompt)/4 > a.limits.MaxInputTokensStats {
+	limits := a.limits
+	if a.limits.Enabled {
+		plan, planErr := a.planReader.GetUserPlan(ctx, q.UserID)
+		if planErr != nil {
+			log.Warn("could not fetch user plan, defaulting to free", slog.Any("error", planErr))
+		} else if plan == "pro" {
+			limits = a.proLimits
+			limits.Enabled = a.limits.Enabled
+		}
+	}
+
+	if limits.Enabled && limits.MaxInputTokensStats > 0 {
+		if len(prompt)/4 > limits.MaxInputTokensStats {
 			return "", ai.ErrInputTooLong
 		}
 	}
 
-	if a.limits.Enabled && a.limits.DailyBudgetTokens > 0 {
+	if limits.Enabled && limits.DailyBudgetTokens > 0 {
 		loc := time.UTC
 		if q.Timezone != "" {
 			if l, err := time.LoadLocation(q.Timezone); err == nil {
@@ -74,7 +91,7 @@ func (a *StatsAnalyser) Analyse(ctx context.Context, q StatsQuery, report StatsR
 		used, sumErr := a.aiLogRepo.SumTokensSince(ctx, q.UserID, dayStart)
 		if sumErr != nil {
 			log.Warn("could not sum daily tokens, skipping budget check", slog.Any("error", sumErr))
-		} else if used >= a.limits.DailyBudgetTokens {
+		} else if used >= limits.DailyBudgetTokens {
 			return "", ai.ErrDailyBudgetExceeded
 		}
 	}

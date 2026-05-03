@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/storage"
@@ -93,6 +94,22 @@ func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, status
 
 	if cmdTag.RowsAffected() == 0 {
 		return fmt.Errorf("%s: %w", op, storage.ErrMessageNotFound)
+	}
+
+	return nil
+}
+
+func (r *MessageRepo) MarkStalePendingMessagesFailed(ctx context.Context, cutoff time.Time) error {
+	const op = "storage.postgres.MarkStalePendingMessagesFailed"
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE messages
+		SET status = 'failed', error = 'timed out: pending too long'
+		WHERE status = 'pending'
+		  AND created_at < $1
+	`, cutoff)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	return nil

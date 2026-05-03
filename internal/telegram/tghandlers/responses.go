@@ -70,8 +70,24 @@ func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64
 	}
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        "Use /start to open the home screen.\nUse /log to submit activity text.\nUse /stats for today's overview.\nUse the Home menu to update your AI context.",
+		ChatID: chatID,
+		Text: "GoDayLog tracks how you spend your time — just describe your day in plain text and the AI does the rest.\n\n" +
+			"Commands:\n" +
+			"/log — submit a description of your day or any activity\n" +
+			"/stats — open the stats menu\n" +
+			"/start — go back to the home screen\n\n" +
+			"Logging:\n" +
+			"Write naturally: \"worked on the project for 2 hours, then went for a run, watched Netflix\". The AI splits this into individual activities, assigns a type and duration, and asks you to confirm before saving anything.\n\n" +
+			"Activity types:\n" +
+			"• growth — working toward your goals\n" +
+			"• routine — necessary daily tasks\n" +
+			"• rest — deliberate rest and leisure\n" +
+			"• drain — passive consumption\n\n" +
+			"You can hint the type directly: \"played guitar — growth\".\n\n" +
+			"Stats:\n" +
+			"View breakdowns by day, week, or any custom range. Each range shows total activities, time tracked, type split, and top tags. Tap Analyse to get AI insights on your patterns.\n\n" +
+			"Settings:\n" +
+			"Set your timezone so dates and stats are shown in your local time. Add a personal context so the AI understands what matters to you and classifies activities more accurately.",
 		ReplyMarkup: markup,
 	})
 	return err
