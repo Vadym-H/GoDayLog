@@ -18,6 +18,12 @@ type Config struct {
 	Database Database   `yaml:"database"`
 	LLM      LLMConfig  `yaml:"llm"`
 	Server   HTTPServer `yaml:"server"`
+	JWT      JWTConfig  `yaml:"jwt"`
+}
+
+type JWTConfig struct {
+	Secret      string `yaml:"secret"       env:"JWT_SECRET"`
+	ExpiryHours int    `yaml:"expiry_hours"  env:"JWT_EXPIRY_HOURS" env-default:"72"`
 }
 
 type Telegram struct {
