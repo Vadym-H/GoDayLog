@@ -41,6 +41,7 @@ type LLMConfig struct {
 	Timeout   time.Duration  `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
 	APIKey    string         `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`
 	LLMLimits LLMUsageLimits `yaml:"limits"`
+	ProLimits LLMUsageLimits `yaml:"pro_limits"`
 }
 
 type LLMUsageLimits struct {

@@ -28,7 +28,7 @@ type Bot struct {
 	staleCleaner staleCleaner
 }
 
-func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client, limits config.LLMUsageLimits) (*Bot, error) {
+func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Client, limits config.LLMUsageLimits, proLimits config.LLMUsageLimits) (*Bot, error) {
 	tzFinder, err := tzf.NewDefaultFinder()
 	if err != nil {
 		return nil, fmt.Errorf("init timezone finder: %w", err)
@@ -41,12 +41,12 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	statsRepo := storage.NewStatsRepo(db)
 	statsAnalysisRepo := storage.NewStatsAnalysisRepo(db)
 
-	userService := services.NewUserService(log, userRepo, userRepo, limits)
+	userService := services.NewUserService(log, userRepo, userRepo, limits, proLimits)
 	messageService := services.NewMessageService(log, messageRepo)
 	limiter := ai.NewLimiterMiddleware(aiClient, log, limits)
-	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits)
+	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits, proLimits)
 	statsService := services.NewStatsService(log, statsRepo)
-	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, limits)
+	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
 
 	b := &Bot{
 		log:          log,

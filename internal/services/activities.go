@@ -24,6 +24,7 @@ type UserContextReader interface {
 	GetUserContext(ctx context.Context, id domain.Identity) (string, error)
 	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
 	GetUserID(ctx context.Context, id domain.Identity) (string, error)
+	GetUserPlan(ctx context.Context, userID string) (string, error)
 }
 
 type ActivityLogRepository interface {
@@ -43,9 +44,10 @@ type messageAIProcessor struct {
 	activityRepo  ActivityLogRepository
 	aiLogRepo     AIRequestLogRepository
 	limits        config.LLMUsageLimits
+	proLimits     config.LLMUsageLimits
 }
 
-func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRepository, userCtxReader UserContextReader, activityRepo ActivityLogRepository, aiLogRepo AIRequestLogRepository, limits config.LLMUsageLimits) *messageAIProcessor {
+func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRepository, userCtxReader UserContextReader, activityRepo ActivityLogRepository, aiLogRepo AIRequestLogRepository, limits config.LLMUsageLimits, proLimits config.LLMUsageLimits) *messageAIProcessor {
 	return &messageAIProcessor{
 		log:           log,
 		ai:            ai,
@@ -54,6 +56,7 @@ func NewMessageAIProcessor(log *slog.Logger, ai AIClient, messageRepo MessageRep
 		activityRepo:  activityRepo,
 		aiLogRepo:     aiLogRepo,
 		limits:        limits,
+		proLimits:     proLimits,
 	}
 }
 
@@ -90,24 +93,38 @@ func (p *messageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 	now := time.Now().In(loc)
 	today := now.Format("2006-01-02")
 
-	if p.limits.Enabled && p.limits.DailyBudgetTokens > 0 {
+	limits := p.limits
+	if p.limits.Enabled {
 		userID, idErr := p.userCtxReader.GetUserID(ctx, id)
 		if idErr != nil {
-			log.Warn("could not fetch user id for budget check, skipping",
+			log.Warn("could not fetch user id, skipping plan/budget check",
 				slog.String("message_id", messageID),
 				slog.Any("error", idErr),
 			)
 		} else {
-			dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-			used, sumErr := p.aiLogRepo.SumTokensSince(ctx, userID, dayStart)
-			if sumErr != nil {
-				log.Warn("could not sum daily tokens, skipping budget check",
+			plan, planErr := p.userCtxReader.GetUserPlan(ctx, userID)
+			if planErr != nil {
+				log.Warn("could not fetch user plan, defaulting to free",
 					slog.String("message_id", messageID),
-					slog.Any("error", sumErr),
+					slog.Any("error", planErr),
 				)
-			} else if used >= p.limits.DailyBudgetTokens {
-				_ = p.markFailed(ctx, messageID, "daily budget exceeded")
-				return nil, ai.ErrDailyBudgetExceeded
+			} else if plan == "pro" {
+				limits = p.proLimits
+				limits.Enabled = p.limits.Enabled
+			}
+
+			if limits.DailyBudgetTokens > 0 {
+				dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+				used, sumErr := p.aiLogRepo.SumTokensSince(ctx, userID, dayStart)
+				if sumErr != nil {
+					log.Warn("could not sum daily tokens, skipping budget check",
+						slog.String("message_id", messageID),
+						slog.Any("error", sumErr),
+					)
+				} else if used >= limits.DailyBudgetTokens {
+					_ = p.markFailed(ctx, messageID, "daily budget exceeded")
+					return nil, ai.ErrDailyBudgetExceeded
+				}
 			}
 		}
 	}

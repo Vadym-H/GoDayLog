@@ -45,7 +45,7 @@ func main() {
 
 	aiClient := ai.New(log, cfg.LLM)
 
-	tgBot, err := bot.New(cfg.Telegram.Token, log, db, aiClient, cfg.LLM.LLMLimits)
+	tgBot, err := bot.New(cfg.Telegram.Token, log, db, aiClient, cfg.LLM.LLMLimits, cfg.LLM.ProLimits)
 	if err != nil {
 		log.Error("failed to initialize telegram bot", slog.Any("error", err))
 		panic(err)

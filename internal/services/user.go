@@ -30,17 +30,19 @@ type UserContext interface {
 	UpdateUserTimezone(ctx context.Context, id domain.Identity, timezone string) error
 	GetUserID(ctx context.Context, id domain.Identity) (string, error)
 	GetUserTimezone(ctx context.Context, id domain.Identity) (string, error)
+	GetUserPlanByIdentity(ctx context.Context, id domain.Identity) (string, error)
 }
 
 type UserService struct {
-	log     *slog.Logger
-	repo    UserCreator
-	userctx UserContext
-	limits  config.LLMUsageLimits
+	log       *slog.Logger
+	repo      UserCreator
+	userctx   UserContext
+	limits    config.LLMUsageLimits
+	proLimits config.LLMUsageLimits
 }
 
-func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext, limits config.LLMUsageLimits) *UserService {
-	return &UserService{log: log, repo: repo, userctx: userctx, limits: limits}
+func NewUserService(log *slog.Logger, repo UserCreator, userctx UserContext, limits config.LLMUsageLimits, proLimits config.LLMUsageLimits) *UserService {
+	return &UserService{log: log, repo: repo, userctx: userctx, limits: limits, proLimits: proLimits}
 }
 
 // RegisterUser registers an external identity and backing user.
@@ -67,8 +69,19 @@ func (s *UserService) RegisterUser(ctx context.Context, id domain.Identity) (str
 func (s *UserService) UpdateUserContext(ctx context.Context, id domain.Identity, llmContext string) error {
 	log := logger.From(ctx, s.log)
 
-	if s.limits.Enabled && s.limits.MaxContextChars > 0 && len(llmContext) > s.limits.MaxContextChars {
-		return &ErrContextTooLong{Len: len(llmContext), Limit: s.limits.MaxContextChars}
+	limits := s.limits
+	if s.limits.Enabled {
+		plan, planErr := s.userctx.GetUserPlanByIdentity(ctx, id)
+		if planErr != nil {
+			log.Warn("could not fetch user plan, defaulting to free", slog.Any("error", planErr))
+		} else if plan == "pro" {
+			limits = s.proLimits
+			limits.Enabled = s.limits.Enabled
+		}
+	}
+
+	if limits.Enabled && limits.MaxContextChars > 0 && len(llmContext) > limits.MaxContextChars {
+		return &ErrContextTooLong{Len: len(llmContext), Limit: limits.MaxContextChars}
 	}
 
 	if err := s.userctx.UpdateUserContext(ctx, id, llmContext); err != nil {

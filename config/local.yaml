@@ -22,6 +22,11 @@ llm:
     max_input_tokens_stats: 2000
     daily_budget_tokens: 5000
     max_context_chars: 700
+  pro_limits:
+    max_input_tokens_activities: 10000
+    max_input_tokens_stats: 160000
+    daily_budget_tokens: 500000
+    max_context_chars: 2000
 server:
   address: ":8080"
   timeout: 4s
