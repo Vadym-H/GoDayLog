@@ -8,4 +8,5 @@ var (
 	ErrInvalidMessageStatus = errors.New("invalid message status")
 	ErrMessageInUse         = errors.New("message is referenced by activity logs")
 	ErrMessageFailed        = errors.New("message has failed status")
+	ErrActivityNotFound     = errors.New("activity not found")
 )

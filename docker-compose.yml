@@ -25,16 +25,31 @@ services:
     restart: unless-stopped
     environment:
       CONFIG_PATH: /app/config/prod.yaml
-
-      #override
       DB_HOST: postgres
-
-      #env
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
       LLM_API_KEY: ${LLM_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: ghcr.io/vadym-h/godaylog:latest
+    container_name: daylog-api
+    restart: unless-stopped
+    command: ["/app/api"]
+    ports:
+      - "8080:8080"
+    environment:
+      CONFIG_PATH: /app/config/prod.yaml
+      DB_HOST: postgres
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      LLM_API_KEY: ${LLM_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
     depends_on:
       postgres:
         condition: service_healthy

@@ -32,6 +32,26 @@ tasks:
     cmds:
       - docker-compose -f {{.COMPOSE_DEV}} logs -f daylog
 
+  api:run:
+    desc: Run API server locally
+    cmds:
+      - go run ./cmd/api
+
+  api:dev:up:
+    desc: Start dev API container
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} up api
+
+  api:dev:logs:
+    desc: Dev API logs
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} logs -f api
+
+  api:dev:restart:
+    desc: Restart dev API container
+    cmds:
+      - docker-compose -f {{.COMPOSE_DEV}} restart api
+
   # --- PROD ---
 
   prod:up:

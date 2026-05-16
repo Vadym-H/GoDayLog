@@ -37,8 +37,30 @@ services:
       DB_NAME: ${DB_NAME}
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
       LLM_API_KEY: ${LLM_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: daylog-api
+    restart: on-failure
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: ["go", "run", "./cmd/api"]
     ports:
       - "8080:8080"
+    environment:
+      CONFIG_PATH: /app/config/local.yaml
+      DB_HOST: postgres
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      LLM_API_KEY: ${LLM_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
     depends_on:
       postgres:
         condition: service_healthy

@@ -34,3 +34,5 @@ Dockerfile.dev
 /docs
 .claude
 .mcp.json
+
+/cmd/tokengen
