@@ -124,7 +124,15 @@ func checkAuthDate(authDateStr string) error {
 	if err != nil {
 		return fmt.Errorf("%w: invalid auth_date", ErrInvalidAuth)
 	}
-	if time.Since(time.Unix(ts, 0)) > 24*time.Hour {
+
+	const allowedFutureSkew = time.Minute
+
+	authTime := time.Unix(ts, 0)
+	now := time.Now()
+	if authTime.After(now.Add(allowedFutureSkew)) {
+		return fmt.Errorf("%w: auth_date is in the future", ErrInvalidAuth)
+	}
+	if now.Sub(authTime) > 24*time.Hour {
 		return ErrAuthExpired
 	}
 	return nil
