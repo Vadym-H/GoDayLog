@@ -59,37 +59,22 @@ func (h *Handlers) MiniApp(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) Widget(w http.ResponseWriter, r *http.Request) {
 	log := logger.From(r.Context(), h.log)
 
-	var body struct {
-		ID        string `json:"id"`
-		FirstName string `json:"first_name"`
-		Username  string `json:"username"`
-		PhotoURL  string `json:"photo_url"`
-		AuthDate  string `json:"auth_date"`
-		Hash      string `json:"hash"`
-	}
+	// Accept any field Telegram sends (id, first_name, last_name, username,
+	// photo_url, auth_date, hash, ...). A fixed struct would silently drop
+	// unknown fields and break HMAC validation, since the hash is computed
+	// over the full set Telegram sent.
+	var body map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	params := url.Values{}
-	if body.ID != "" {
-		params.Set("id", body.ID)
-	}
-	if body.FirstName != "" {
-		params.Set("first_name", body.FirstName)
-	}
-	if body.Username != "" {
-		params.Set("username", body.Username)
-	}
-	if body.PhotoURL != "" {
-		params.Set("photo_url", body.PhotoURL)
-	}
-	if body.AuthDate != "" {
-		params.Set("auth_date", body.AuthDate)
-	}
-	if body.Hash != "" {
-		params.Set("hash", body.Hash)
+	for k, v := range body {
+		if v == "" {
+			continue
+		}
+		params.Set(k, v)
 	}
 
 	tgID, err := telegram.ValidateWidget(params, h.cfg.Telegram.Token)
