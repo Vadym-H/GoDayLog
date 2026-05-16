@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/config"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
+	"github.com/Vadym-H/GoDayLog/internal/storage"
 )
 
 const (
@@ -183,6 +185,12 @@ func (p *messageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 func (p *messageAIProcessor) SaveActivities(ctx context.Context, id domain.Identity, messageID string, activities []domain.Activity) error {
 	log := logger.From(ctx, p.log)
 
+	// Guard: a zero identity must never produce an empty user_id that would
+	// silently match nothing in the scoped UPDATE/INSERT WHERE clauses.
+	if id.Provider == "" || id.ExternalID == "" {
+		return fmt.Errorf("save activities: %w", storage.ErrUserNotFound)
+	}
+
 	userID, err := p.userCtxReader.GetUserID(ctx, id)
 	if err != nil {
 		log.Error("failed to resolve user id",
@@ -215,6 +223,10 @@ func (p *messageAIProcessor) SaveActivities(ctx context.Context, id domain.Ident
 // CancelReview marks the message as failed because the user cancelled the review.
 func (p *messageAIProcessor) CancelReview(ctx context.Context, id domain.Identity, messageID string) error {
 	log := logger.From(ctx, p.log)
+
+	if id.Provider == "" || id.ExternalID == "" {
+		return fmt.Errorf("cancel review: %w", storage.ErrUserNotFound)
+	}
 
 	userID, err := p.userCtxReader.GetUserID(ctx, id)
 	if err != nil {
