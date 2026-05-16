@@ -115,6 +115,25 @@ func (r *MessageRepo) MarkStalePendingMessagesFailed(ctx context.Context, cutoff
 	return nil
 }
 
+func (r *MessageRepo) GetMessage(ctx context.Context, messageID, userID string) (domain.Message, error) {
+	const op = "storage.postgres.GetMessage"
+
+	var m domain.Message
+	err := r.db.QueryRow(ctx, `
+		SELECT id, text, status, created_at
+		FROM messages
+		WHERE id = $1 AND user_id = $2
+	`, messageID, userID).Scan(&m.ID, &m.Text, &m.Status, &m.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Message{}, fmt.Errorf("%s: %w", op, storage.ErrMessageNotFound)
+		}
+		return domain.Message{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return m, nil
+}
+
 func (r *MessageRepo) DeleteMessage(ctx context.Context, messageID string) error {
 	const op = "storage.postgres.DeleteMessage"
 

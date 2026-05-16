@@ -65,8 +65,9 @@ func main() {
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits, proLimits)
 	statsService := services.NewStatsService(log, statsRepo)
 	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
+	activityLogService := services.NewActivityLogService(log, activityLogRepo, activityLogRepo, messageRepo, userRepo)
 
-	h := handlers.New(log, cfg, userService, messageService, aiProcessor, statsService, statsAnalyser)
+	h := handlers.New(log, cfg, userService, messageService, aiProcessor, statsService, statsAnalyser, activityLogService)
 	router := api.NewRouter(cfg, h)
 	server := api.NewServer(cfg, log, router)
 

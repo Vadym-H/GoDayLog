@@ -36,6 +36,13 @@ type statsAnalyser interface {
 	Analyse(ctx context.Context, q services.StatsQuery, report services.StatsReport, userContext string) (string, error)
 }
 
+type activityLogService interface {
+	GetHistory(ctx context.Context, id domain.Identity, limit, offset int) ([]domain.ActivityLog, error)
+	GetMessageWithActivities(ctx context.Context, id domain.Identity, messageID string) (services.MessageWithActivities, error)
+	DeleteActivity(ctx context.Context, id domain.Identity, activityID string) error
+	UpdateActivity(ctx context.Context, id domain.Identity, activityID string, fields domain.UpdateActivityFields) (domain.ActivityLog, error)
+}
+
 type Handlers struct {
 	log           *slog.Logger
 	cfg           *config.Config
@@ -44,6 +51,7 @@ type Handlers struct {
 	aiProc        aiProcessor
 	statsSvc      statsGetter
 	statsAnalyser statsAnalyser
+	activitySvc   activityLogService
 }
 
 func New(
@@ -54,6 +62,7 @@ func New(
 	aiProc aiProcessor,
 	statsSvc statsGetter,
 	analyser statsAnalyser,
+	activitySvc activityLogService,
 ) *Handlers {
 	return &Handlers{
 		log:           log,
@@ -63,5 +72,6 @@ func New(
 		aiProc:        aiProc,
 		statsSvc:      statsSvc,
 		statsAnalyser: analyser,
+		activitySvc:   activitySvc,
 	}
 }
