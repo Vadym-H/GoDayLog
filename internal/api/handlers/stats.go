@@ -107,7 +107,7 @@ func (h *Handlers) buildStatsQuery(r *http.Request, id domain.Identity) (service
 	if err != nil {
 		return services.StatsQuery{}, fmt.Errorf("invalid to date, use format 2006-01-02")
 	}
-	to = to.Add(24 * time.Hour) // end of day, exclusive
+	to = to.AddDate(0, 0, 1) // next local midnight, end of day exclusive
 
 	userID, err := h.userSvc.GetUserID(r.Context(), id)
 	if err != nil {
