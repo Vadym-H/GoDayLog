@@ -74,7 +74,10 @@ func main() {
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server.Run(appCtx)
+	if err := server.Run(appCtx); err != nil {
+		log.Error("api server exited with error", slog.Any("error", err))
+		os.Exit(1)
+	}
 }
 
 func setupLogger(env string) *slog.Logger {

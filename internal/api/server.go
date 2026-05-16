@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -28,20 +29,29 @@ func NewServer(cfg *config.Config, log *slog.Logger, h http.Handler) *Server {
 	}
 }
 
-func (s *Server) Run(ctx context.Context) {
+func (s *Server) Run(ctx context.Context) error {
+	listenErr := make(chan error, 1)
 	go func() {
 		if err := s.http.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.log.Error("server listen error", slog.Any("error", err))
+			listenErr <- err
+			return
 		}
+		listenErr <- nil
 	}()
 	s.log.Info("api server started", slog.String("addr", s.http.Addr))
 
-	<-ctx.Done()
+	select {
+	case err := <-listenErr:
+		return fmt.Errorf("server listen: %w", err)
+	case <-ctx.Done():
+	}
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.http.Shutdown(shutCtx); err != nil {
 		s.log.Error("graceful shutdown failed", slog.Any("error", err))
+		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	s.log.Info("api server stopped")
+	return nil
 }
