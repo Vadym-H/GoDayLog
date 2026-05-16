@@ -76,6 +76,12 @@ func (h *Handlers) SubmitLog(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ConfirmLog(w http.ResponseWriter, r *http.Request) {
 	log := logger.From(r.Context(), h.log)
 
+	id, ok := apicontext.IdentityFromCtx(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	messageID := chi.URLParam(r, "id")
 	if messageID == "" {
 		writeError(w, http.StatusBadRequest, "missing message id")
@@ -92,7 +98,7 @@ func (h *Handlers) ConfirmLog(w http.ResponseWriter, r *http.Request) {
 
 	activities := jsonToDomain(body.Activities)
 
-	if err := h.aiProc.SaveActivities(r.Context(), messageID, activities); err != nil {
+	if err := h.aiProc.SaveActivities(r.Context(), id, messageID, activities); err != nil {
 		if errors.Is(err, storage.ErrMessageFailed) {
 			writeError(w, http.StatusConflict, "session expired, please submit your log again")
 			return
@@ -112,13 +118,19 @@ func (h *Handlers) ConfirmLog(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) CancelLog(w http.ResponseWriter, r *http.Request) {
 	log := logger.From(r.Context(), h.log)
 
+	id, ok := apicontext.IdentityFromCtx(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	messageID := chi.URLParam(r, "id")
 	if messageID == "" {
 		writeError(w, http.StatusBadRequest, "missing message id")
 		return
 	}
 
-	if err := h.aiProc.CancelReview(r.Context(), messageID); err != nil {
+	if err := h.aiProc.CancelReview(r.Context(), id, messageID); err != nil {
 		log.Error("failed to cancel review", "error", err)
 	}
 

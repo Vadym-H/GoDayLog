@@ -20,7 +20,7 @@ func NewActivityLogRepo(s *Storage) *ActivityLogRepo {
 	return &ActivityLogRepo{db: s.db}
 }
 
-func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID string, items []domain.Activity) error {
+func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID, userID string, items []domain.Activity) error {
 	const op = "storage.postgres.CreateActivityLogs"
 
 	tx, err := r.db.Begin(ctx)
@@ -30,7 +30,7 @@ func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID stri
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var msgStatus string
-	err = tx.QueryRow(ctx, `SELECT status FROM messages WHERE id = $1`, messageID).Scan(&msgStatus)
+	err = tx.QueryRow(ctx, `SELECT status FROM messages WHERE id = $1 AND user_id = $2`, messageID, userID).Scan(&msgStatus)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%s: %w", op, storage.ErrMessageNotFound)
@@ -42,17 +42,12 @@ func (r *ActivityLogRepo) CreateActivityLogs(ctx context.Context, messageID stri
 	}
 
 	for _, a := range items {
-		result, err := tx.Exec(ctx, `
+		_, err := tx.Exec(ctx, `
 			INSERT INTO activity_logs (message_id, user_id, description, tag, activity_type, duration_minutes, started_at, completed_at)
-			SELECT $1, m.user_id, $2, $3, $4, $5, $6, $7
-			FROM messages m
-			WHERE m.id = $1
-		`, messageID, a.Description, a.Tag, a.ActivityType, a.DurationMinutes, a.StartedAt, a.CompletedAt)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, messageID, userID, a.Description, a.Tag, a.ActivityType, a.DurationMinutes, a.StartedAt, a.CompletedAt)
 		if err != nil {
 			return fmt.Errorf("%s: insert: %w", op, err)
-		}
-		if result.RowsAffected() == 0 {
-			return fmt.Errorf("%s: insert: %w", op, storage.ErrMessageNotFound)
 		}
 	}
 

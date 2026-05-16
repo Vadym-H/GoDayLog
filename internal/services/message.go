@@ -10,7 +10,7 @@ import (
 
 type MessageRepository interface {
 	SaveMessage(ctx context.Context, id domain.Identity, externalMessageID, text string) (string, error)
-	UpdateMessageStatus(ctx context.Context, messageID, status, statusError string) error
+	UpdateMessageStatus(ctx context.Context, messageID, userID, status, statusError string) error
 	DeleteMessage(ctx context.Context, messageID string) error
 }
 

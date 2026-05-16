@@ -24,8 +24,8 @@ type messageService interface {
 
 type aiProcessor interface {
 	ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]domain.Activity, error)
-	SaveActivities(ctx context.Context, messageID string, activities []domain.Activity) error
-	CancelReview(ctx context.Context, messageID string) error
+	SaveActivities(ctx context.Context, id domain.Identity, messageID string, activities []domain.Activity) error
+	CancelReview(ctx context.Context, id domain.Identity, messageID string) error
 }
 
 type statsGetter interface {

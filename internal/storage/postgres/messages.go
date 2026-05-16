@@ -66,7 +66,7 @@ func (r *MessageRepo) SaveMessage(ctx context.Context, id domain.Identity, exter
 	return messageID, nil
 }
 
-func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, status, statusError string) error {
+func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, userID, status, statusError string) error {
 	const op = "storage.postgres.UpdateMessageStatus"
 
 	if _, ok := allowedMessageStatuses[status]; !ok {
@@ -84,10 +84,10 @@ func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, status
 
 	cmdTag, err := r.db.Exec(ctx, `
 		UPDATE messages
-		SET status = $2,
-		    error = $3
-		WHERE id = $1
-	`, messageID, status, dbErr)
+		SET status = $3,
+		    error = $4
+		WHERE id = $1 AND user_id = $2
+	`, messageID, userID, status, dbErr)
 	if err != nil {
 		return fmt.Errorf("%s: update status: %w", op, err)
 	}

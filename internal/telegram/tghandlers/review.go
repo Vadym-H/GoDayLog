@@ -35,10 +35,11 @@ func (tg *TgHandlers) handleReviewAccept(ctx context.Context, bot *tgbot.Bot, ch
 
 	r.mu.Lock()
 	messageID := r.messageID
+	identity := r.identity
 	activities := append([]domain.Activity(nil), r.activities...)
 	r.mu.Unlock()
 
-	if err := tg.aiProcessor.SaveActivities(ctx, messageID, activities); err != nil {
+	if err := tg.aiProcessor.SaveActivities(ctx, identity, messageID, activities); err != nil {
 		tg.clearAwaitingTag(chatID)
 		tg.clearAwaitingStartedAt(chatID)
 		tg.clearPendingReview(chatID)
@@ -83,7 +84,12 @@ func (tg *TgHandlers) handleReviewCancel(ctx context.Context, bot *tgbot.Bot, ch
 		return nil
 	}
 
-	_ = tg.aiProcessor.CancelReview(ctx, r.messageID)
+	r.mu.Lock()
+	messageID := r.messageID
+	identity := r.identity
+	r.mu.Unlock()
+
+	_ = tg.aiProcessor.CancelReview(ctx, identity, messageID)
 	tg.clearAwaitingTag(chatID)
 	tg.clearAwaitingStartedAt(chatID)
 	tg.clearPendingReview(chatID)

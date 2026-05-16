@@ -28,7 +28,7 @@ type UserContextReader interface {
 }
 
 type ActivityLogRepository interface {
-	CreateActivityLogs(ctx context.Context, messageID string, items []domain.Activity) error
+	CreateActivityLogs(ctx context.Context, messageID, userID string, items []domain.Activity) error
 }
 
 type AIRequestLogRepository interface {
@@ -93,38 +93,41 @@ func (p *messageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 	now := time.Now().In(loc)
 	today := now.Format("2006-01-02")
 
-	limits := p.limits
-	if p.limits.Enabled {
-		userID, idErr := p.userCtxReader.GetUserID(ctx, id)
-		if idErr != nil {
-			log.Warn("could not fetch user id, skipping plan/budget check",
-				slog.String("message_id", messageID),
-				slog.Any("error", idErr),
-			)
-		} else {
-			plan, planErr := p.userCtxReader.GetUserPlan(ctx, userID)
-			if planErr != nil {
-				log.Warn("could not fetch user plan, defaulting to free",
-					slog.String("message_id", messageID),
-					slog.Any("error", planErr),
-				)
-			} else if plan == "pro" {
-				limits = p.proLimits
-				limits.Enabled = p.limits.Enabled
-			}
+	// userID is needed both for plan/budget checks and for marking the message
+	// failed under the owning user. We always look it up; if it fails, markFailed
+	// is skipped (the user can resubmit and the stale-pending sweeper will catch it).
+	userID, idErr := p.userCtxReader.GetUserID(ctx, id)
+	if idErr != nil {
+		log.Warn("could not fetch user id",
+			slog.String("message_id", messageID),
+			slog.Any("error", idErr),
+		)
+	}
 
-			if limits.DailyBudgetTokens > 0 {
-				dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-				used, sumErr := p.aiLogRepo.SumTokensSince(ctx, userID, dayStart)
-				if sumErr != nil {
-					log.Warn("could not sum daily tokens, skipping budget check",
-						slog.String("message_id", messageID),
-						slog.Any("error", sumErr),
-					)
-				} else if used >= limits.DailyBudgetTokens {
-					_ = p.markFailed(ctx, messageID, "daily budget exceeded")
-					return nil, ai.ErrDailyBudgetExceeded
-				}
+	limits := p.limits
+	if p.limits.Enabled && userID != "" {
+		plan, planErr := p.userCtxReader.GetUserPlan(ctx, userID)
+		if planErr != nil {
+			log.Warn("could not fetch user plan, defaulting to free",
+				slog.String("message_id", messageID),
+				slog.Any("error", planErr),
+			)
+		} else if plan == "pro" {
+			limits = p.proLimits
+			limits.Enabled = p.limits.Enabled
+		}
+
+		if limits.DailyBudgetTokens > 0 {
+			dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+			used, sumErr := p.aiLogRepo.SumTokensSince(ctx, userID, dayStart)
+			if sumErr != nil {
+				log.Warn("could not sum daily tokens, skipping budget check",
+					slog.String("message_id", messageID),
+					slog.Any("error", sumErr),
+				)
+			} else if used >= limits.DailyBudgetTokens {
+				_ = p.markFailed(ctx, messageID, userID, "daily budget exceeded")
+				return nil, ai.ErrDailyBudgetExceeded
 			}
 		}
 	}
@@ -143,19 +146,19 @@ func (p *messageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 			slog.String("message_id", messageID),
 			slog.Any("error", err),
 		)
-		_ = p.markFailed(ctx, messageID, err.Error())
+		_ = p.markFailed(ctx, messageID, userID, err.Error())
 		return nil, err
 	}
 
 	if !response.Valid {
 		log.Info("ai marked message as invalid", slog.String("message_id", messageID))
-		_ = p.markFailed(ctx, messageID, "ai: input not a valid day activity")
+		_ = p.markFailed(ctx, messageID, userID, "ai: input not a valid day activity")
 		return nil, nil
 	}
 
 	if len(response.Activities) == 0 {
 		log.Info("ai returned no activities", slog.String("message_id", messageID))
-		_ = p.markFailed(ctx, messageID, "ai: no activities extracted")
+		_ = p.markFailed(ctx, messageID, userID, "ai: no activities extracted")
 		return nil, nil
 	}
 
@@ -175,19 +178,30 @@ func (p *messageAIProcessor) ExtractActivities(ctx context.Context, id domain.Id
 }
 
 // SaveActivities inserts accepted activities in a single transaction and marks the message done.
-func (p *messageAIProcessor) SaveActivities(ctx context.Context, messageID string, activities []domain.Activity) error {
+// All storage writes are scoped to the caller's user_id, so a foreign message ID
+// returns ErrMessageNotFound instead of mutating another user's data.
+func (p *messageAIProcessor) SaveActivities(ctx context.Context, id domain.Identity, messageID string, activities []domain.Activity) error {
 	log := logger.From(ctx, p.log)
 
-	if err := p.activityRepo.CreateActivityLogs(ctx, messageID, activities); err != nil {
+	userID, err := p.userCtxReader.GetUserID(ctx, id)
+	if err != nil {
+		log.Error("failed to resolve user id",
+			slog.String("message_id", messageID),
+			slog.Any("error", err),
+		)
+		return err
+	}
+
+	if err := p.activityRepo.CreateActivityLogs(ctx, messageID, userID, activities); err != nil {
 		log.Error("failed to create activity logs",
 			slog.String("message_id", messageID),
 			slog.Any("error", err),
 		)
-		_ = p.markFailed(ctx, messageID, err.Error())
+		_ = p.markFailed(ctx, messageID, userID, err.Error())
 		return err
 	}
 
-	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, messageStatusDone, ""); err != nil {
+	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, userID, messageStatusDone, ""); err != nil {
 		log.Error("failed to mark message done",
 			slog.String("message_id", messageID),
 			slog.Any("error", err),
@@ -199,14 +213,29 @@ func (p *messageAIProcessor) SaveActivities(ctx context.Context, messageID strin
 }
 
 // CancelReview marks the message as failed because the user cancelled the review.
-func (p *messageAIProcessor) CancelReview(ctx context.Context, messageID string) error {
-	return p.markFailed(ctx, messageID, "user cancelled review")
-}
-
-func (p *messageAIProcessor) markFailed(ctx context.Context, messageID, reason string) error {
+func (p *messageAIProcessor) CancelReview(ctx context.Context, id domain.Identity, messageID string) error {
 	log := logger.From(ctx, p.log)
 
-	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, messageStatusFailed, reason); err != nil {
+	userID, err := p.userCtxReader.GetUserID(ctx, id)
+	if err != nil {
+		log.Error("failed to resolve user id",
+			slog.String("message_id", messageID),
+			slog.Any("error", err),
+		)
+		return err
+	}
+	return p.markFailed(ctx, messageID, userID, "user cancelled review")
+}
+
+// markFailed is a no-op when userID is empty so that internal flows
+// which couldn't resolve the user can call it without error.
+func (p *messageAIProcessor) markFailed(ctx context.Context, messageID, userID, reason string) error {
+	log := logger.From(ctx, p.log)
+	if userID == "" {
+		return nil
+	}
+
+	if err := p.messageRepo.UpdateMessageStatus(ctx, messageID, userID, messageStatusFailed, reason); err != nil {
 		log.Error("failed to mark message failed",
 			slog.String("message_id", messageID),
 			slog.Any("error", err),
