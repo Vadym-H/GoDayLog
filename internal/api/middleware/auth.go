@@ -25,7 +25,7 @@ func Auth(cfg config.JWTConfig) func(http.Handler) http.Handler {
 					return nil, jwt.ErrSignatureInvalid
 				}
 				return []byte(cfg.Secret), nil
-			})
+			}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 			if err != nil || !token.Valid {
 				unauthorized(w)
 				return
