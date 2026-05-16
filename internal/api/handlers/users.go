@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/api/apicontext"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
@@ -58,6 +59,17 @@ func (h *Handlers) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Timezone != nil {
+		// Reject anything that is not a valid IANA zone. time.LoadLocation("")
+		// silently returns UTC, which would let `{"timezone": ""}` clear the
+		// stored zone — treat empty as invalid too.
+		if *body.Timezone == "" {
+			writeError(w, http.StatusBadRequest, "timezone must be a valid IANA zone")
+			return
+		}
+		if _, err := time.LoadLocation(*body.Timezone); err != nil {
+			writeError(w, http.StatusBadRequest, "timezone must be a valid IANA zone")
+			return
+		}
 		if err := h.userSvc.UpdateUserTimezone(r.Context(), id, *body.Timezone); err != nil {
 			log.Error("failed to update timezone", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
