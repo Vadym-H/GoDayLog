@@ -207,20 +207,25 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 		}
 	}
 
-	markup := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Change range", CallbackData: callbackStatsPicker},
-			},
-			{
-				{Text: "Analyse with AI", CallbackData: callbackStatsAnalyse},
-			},
-			{
-				{Text: "Home", CallbackData: callbackHome},
-			},
+	// "Analyse with AI" makes no sense (and wastes the user's daily token
+	// budget) when the range has no activities — only offer it when there is
+	// something to analyse.
+	rows := [][]models.InlineKeyboardButton{
+		{
+			{Text: "Log activity", CallbackData: callbackLogActivity},
+			{Text: "Change range", CallbackData: callbackStatsPicker},
 		},
 	}
+	if report.TotalCount > 0 {
+		rows = append(rows, []models.InlineKeyboardButton{
+			{Text: "Analyse with AI", CallbackData: callbackStatsAnalyse},
+		})
+	}
+	rows = append(rows, []models.InlineKeyboardButton{
+		{Text: "Home", CallbackData: callbackHome},
+	})
+
+	markup := &models.InlineKeyboardMarkup{InlineKeyboard: rows}
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID:      chatID,
@@ -317,6 +322,16 @@ func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, ch
 		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "No stats loaded. Please select a range first.",
+		})
+		return err
+	}
+
+	// Guard against an old stats message that still shows the button after
+	// this fix shipped — refuse to send an empty report to the LLM.
+	if ps.report.TotalCount == 0 {
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Nothing to analyse in this range — no activities logged.",
 		})
 		return err
 	}
