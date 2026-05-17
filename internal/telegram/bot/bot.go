@@ -109,6 +109,10 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 		return
 	}
 
+	if b.tgHandlers.HandlePendingVoiceContextInput(ctx, bot, update) {
+		return
+	}
+
 	if b.tgHandlers.HandlePendingContextInput(ctx, bot, update) {
 		return
 	}
