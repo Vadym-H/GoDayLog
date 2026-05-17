@@ -22,20 +22,22 @@ var activityPrompt string
 var statsAnalysisPrompt string
 
 type Client struct {
-	http    *http.Client
-	log     *slog.Logger
-	baseURL string
-	apiKey  string
-	model   string
+	http         *http.Client
+	log          *slog.Logger
+	baseURL      string
+	apiKey       string
+	model        string
+	whisperModel string
 }
 
 func New(log *slog.Logger, cfg config.LLMConfig) *Client {
 	return &Client{
-		http:    &http.Client{Timeout: cfg.Timeout},
-		log:     log,
-		baseURL: cfg.BaseURL,
-		apiKey:  cfg.APIKey,
-		model:   cfg.Model,
+		http:         &http.Client{Timeout: cfg.Timeout},
+		log:          log,
+		baseURL:      cfg.BaseURL,
+		apiKey:       cfg.APIKey,
+		model:        cfg.Model,
+		whisperModel: cfg.WhisperModel,
 	}
 }
 
