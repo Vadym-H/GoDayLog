@@ -41,13 +41,14 @@ type Database struct {
 }
 
 type LLMConfig struct {
-	Provider  string         `yaml:"provider" env:"LLM_PROVIDER" env-default:"openai"`
-	BaseURL   string         `yaml:"base_url" env:"LLM_BASE_URL" env-default:"https://api.openai.com/v1"`
-	Model     string         `yaml:"model" env:"LLM_MODEL" env-default:"gpt-3.5-turbo"`
-	Timeout   time.Duration  `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
-	APIKey    string         `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`
-	LLMLimits LLMUsageLimits `yaml:"limits"`
-	ProLimits LLMUsageLimits `yaml:"pro_limits"`
+	Provider     string         `yaml:"provider" env:"LLM_PROVIDER" env-default:"openai"`
+	BaseURL      string         `yaml:"base_url" env:"LLM_BASE_URL" env-default:"https://api.openai.com/v1"`
+	Model        string         `yaml:"model" env:"LLM_MODEL" env-default:"gpt-3.5-turbo"`
+	WhisperModel string         `yaml:"whisper_model" env:"WHISPER_MODEL" env-default:"whisper-1"`
+	Timeout      time.Duration  `yaml:"timeout" env:"LLM_TIMEOUT" env-default:"30s"`
+	APIKey       string         `yaml:"api_key" env-required:"true" env:"LLM_API_KEY"`
+	LLMLimits    LLMUsageLimits `yaml:"limits"`
+	ProLimits    LLMUsageLimits `yaml:"pro_limits"`
 }
 
 type LLMUsageLimits struct {
@@ -56,6 +57,8 @@ type LLMUsageLimits struct {
 	MaxInputTokensStats      int  `yaml:"max_input_tokens_stats" env:"LLM_LIMITS_MAX_INPUT_TOKENS_STATS" env-default:"8000"`
 	DailyBudgetTokens        int  `yaml:"daily_budget_tokens" env:"LLM_LIMITS_DAILY_BUDGET_TOKENS" env-default:"0"`
 	MaxContextChars          int  `yaml:"max_context_chars" env:"LLM_LIMITS_MAX_CONTEXT_CHARS" env-default:"0"`
+	MaxAudioBytes            int  `yaml:"max_audio_bytes" env:"LLM_LIMITS_MAX_AUDIO_BYTES" env-default:"10485760"`
+	DailyBudgetAudioMinutes  int  `yaml:"daily_budget_audio_minutes" env:"LLM_LIMITS_DAILY_BUDGET_AUDIO_MINUTES" env-default:"0"`
 }
 
 type HTTPServer struct {
