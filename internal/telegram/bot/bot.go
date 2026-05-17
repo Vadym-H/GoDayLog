@@ -84,32 +84,10 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 }
 
 func (b *Bot) Start(ctx context.Context) {
-	go b.runStaleCleaner(ctx)
+	go services.RunStaleCleaner(ctx, b.log, b.staleCleaner)
 	b.log.Info("telegram bot started")
 	b.tg.Start(ctx)
 	b.log.Info("telegram bot stopped")
-}
-
-func (b *Bot) runStaleCleaner(ctx context.Context) {
-	const staleness = 10 * time.Minute
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	b.cleanStale(ctx, staleness)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			b.cleanStale(ctx, staleness)
-		}
-	}
-}
-
-func (b *Bot) cleanStale(ctx context.Context, staleness time.Duration) {
-	if err := b.staleCleaner.MarkStalePendingMessagesFailed(ctx, time.Now().Add(-staleness)); err != nil {
-		b.log.Warn("stale pending cleaner error", slog.Any("error", err))
-	}
 }
 
 // withRequestID stamps a fresh request ID onto ctx before dispatching to any handler.

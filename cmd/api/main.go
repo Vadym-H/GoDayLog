@@ -74,6 +74,8 @@ func main() {
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	go services.RunStaleCleaner(appCtx, log, messageRepo)
+
 	if err := server.Run(appCtx); err != nil {
 		log.Error("api server exited with error", slog.Any("error", err))
 		os.Exit(1)
