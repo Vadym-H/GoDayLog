@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"io"
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/config"
@@ -42,6 +43,10 @@ type activityLogService interface {
 	UpdateActivity(ctx context.Context, id domain.Identity, activityID string, fields domain.UpdateActivityFields) (domain.ActivityLog, error)
 }
 
+type transcriptionService interface {
+	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64) (string, error)
+}
+
 type Handlers struct {
 	log           *slog.Logger
 	cfg           *config.Config
@@ -51,6 +56,7 @@ type Handlers struct {
 	statsSvc      statsGetter
 	statsAnalyser statsAnalyser
 	activitySvc   activityLogService
+	transcribe    transcriptionService
 }
 
 func New(
@@ -62,6 +68,7 @@ func New(
 	statsSvc statsGetter,
 	analyser statsAnalyser,
 	activitySvc activityLogService,
+	transcribe transcriptionService,
 ) *Handlers {
 	return &Handlers{
 		log:           log,
@@ -72,5 +79,6 @@ func New(
 		statsSvc:      statsSvc,
 		statsAnalyser: analyser,
 		activitySvc:   activitySvc,
+		transcribe:    transcribe,
 	}
 }
