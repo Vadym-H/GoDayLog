@@ -285,6 +285,12 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 
 	identity := domain.Identity{Provider: "telegram", ExternalID: strconv.FormatInt(update.Message.From.ID, 10)}
 	externalMessageID := strconv.Itoa(update.Message.ID)
+	tg.processLogText(ctx, bot, chatID, identity, externalMessageID, text)
+	return true
+}
+
+func (tg *TgHandlers) processLogText(ctx context.Context, bot *tgbot.Bot, chatID int64, identity domain.Identity, externalMessageID, text string) {
+	log := logger.From(ctx, tg.log)
 
 	messageID, err := tg.messageService.SaveMessage(ctx, identity, externalMessageID, text)
 	if err != nil {
@@ -295,7 +301,7 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		if sendErr != nil {
 			log.Error("failed to send save error", slog.Any("error", sendErr))
 		}
-		return true
+		return
 	}
 
 	activities, err := tg.aiProcessor.ExtractActivities(ctx, identity, messageID, text)
@@ -319,7 +325,7 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		if sendErr != nil {
 			log.Error("failed to send extraction error", slog.Any("error", sendErr))
 		}
-		return true
+		return
 	}
 
 	if activities == nil {
@@ -330,7 +336,7 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 		if sendErr != nil {
 			log.Error("failed to send invalid activity message", slog.Any("error", sendErr))
 		}
-		return true
+		return
 	}
 
 	r := &pendingReview{
@@ -344,8 +350,6 @@ func (tg *TgHandlers) HandlePendingLogInput(ctx context.Context, bot *tgbot.Bot,
 	if err = tg.sendReviewMessage(ctx, bot, chatID, activities); err != nil {
 		log.Error("failed to send review message", slog.Any("error", err))
 	}
-
-	return true
 }
 
 func (tg *TgHandlers) HandlePendingTagInput(ctx context.Context, bot *tgbot.Bot, update *models.Update) bool {
