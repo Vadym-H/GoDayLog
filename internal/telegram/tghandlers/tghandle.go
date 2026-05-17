@@ -2,6 +2,7 @@ package tghandlers
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -48,6 +49,10 @@ type messageAIProcessor interface {
 	CancelReview(ctx context.Context, id domain.Identity, messageID string) error
 }
 
+type transcriptionService interface {
+	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64) (string, error)
+}
+
 // pendingReview holds the in-progress AI review state for one chat.
 // mu guards activities and editIndex — both are mutated by concurrent handler goroutines.
 type pendingReview struct {
@@ -66,6 +71,8 @@ type TgHandlers struct {
 	statsService   statsService
 	statsAnalyser  statsAnalyser
 	tzFinder       timezoneLookup
+	transcribe     transcriptionService
+	maxAudioBytes  int64
 
 	pendingMu          sync.RWMutex
 	pendingLog         map[int64]struct{}
@@ -79,7 +86,7 @@ type TgHandlers struct {
 	pendingStats       map[int64]*pendingStatsState
 }
 
-func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService, analyser statsAnalyser, tzFinder timezoneLookup) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService, analyser statsAnalyser, tzFinder timezoneLookup, transcribe transcriptionService, maxAudioBytes int64) *TgHandlers {
 	return &TgHandlers{
 		log:                log,
 		userService:        userService,
@@ -88,6 +95,8 @@ func New(log *slog.Logger, userService userService, messageService messageServic
 		statsService:       statsService,
 		statsAnalyser:      analyser,
 		tzFinder:           tzFinder,
+		transcribe:         transcribe,
+		maxAudioBytes:      maxAudioBytes,
 		pendingLog:         make(map[int64]struct{}),
 		pendingLlmCtx:      make(map[int64]struct{}),
 		pendingReview:      make(map[int64]*pendingReview),

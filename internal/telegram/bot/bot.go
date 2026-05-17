@@ -47,10 +47,11 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits, proLimits)
 	statsService := services.NewStatsService(log, statsRepo)
 	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
+	transcriptionSvc := services.NewTranscriptionService(log, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
 
 	b := &Bot{
 		log:          log,
-		tgHandlers:   tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder),
+		tgHandlers:   tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder, transcriptionSvc, int64(limits.MaxAudioBytes)),
 		staleCleaner: messageRepo,
 	}
 
@@ -143,6 +144,10 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 	}
 
 	if b.tgHandlers.HandlePendingTagInput(ctx, bot, update) {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingVoiceLogInput(ctx, bot, update) {
 		return
 	}
 
