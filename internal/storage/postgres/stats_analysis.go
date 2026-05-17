@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/services"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -16,7 +17,7 @@ func NewStatsAnalysisRepo(s *Storage) *StatsAnalysisRepo {
 	return &StatsAnalysisRepo{db: s.db}
 }
 
-func (r *StatsAnalysisRepo) GetActivityEntries(ctx context.Context, q services.StatsQuery) ([]services.ActivityEntry, error) {
+func (r *StatsAnalysisRepo) GetActivityEntries(ctx context.Context, q domain.StatsQuery) ([]services.ActivityEntry, error) {
 	const op = "storage.postgres.GetActivityEntries"
 
 	rows, err := r.db.Query(ctx, `

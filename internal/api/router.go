@@ -22,6 +22,7 @@ func NewRouter(cfg *config.Config, h *handlers.Handlers) http.Handler {
 			r.Get("/users/me", h.GetMe)
 			r.Patch("/users/me", h.UpdateMe)
 			r.Post("/log", h.SubmitLog)
+			r.Post("/log/voice", h.SubmitVoiceLog)
 			r.Get("/log/{id}", h.GetLogWithActivities)
 			r.Post("/log/{id}/confirm", h.ConfirmLog)
 			r.Post("/log/{id}/cancel", h.CancelLog)

@@ -19,7 +19,6 @@ import (
 const (
 	envLocal = "local"
 	envDev   = "dev"
-	envProd  = "prod"
 )
 
 func main() {
@@ -66,13 +65,16 @@ func main() {
 	statsService := services.NewStatsService(log, statsRepo)
 	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
 	activityLogService := services.NewActivityLogService(log, activityLogRepo, activityLogRepo, messageRepo, userRepo)
+	transcriptionSvc := services.NewTranscriptionService(log, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
 
-	h := handlers.New(log, cfg, userService, messageService, aiProcessor, statsService, statsAnalyser, activityLogService)
+	h := handlers.New(log, cfg, userService, messageService, aiProcessor, statsService, statsAnalyser, activityLogService, transcriptionSvc)
 	router := api.NewRouter(cfg, h)
 	server := api.NewServer(cfg, log, router)
 
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	go services.RunStaleCleaner(appCtx, log, messageRepo)
 
 	if err := server.Run(appCtx); err != nil {
 		log.Error("api server exited with error", slog.Any("error", err))

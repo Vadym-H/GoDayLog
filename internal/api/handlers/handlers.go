@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"context"
+	"io"
 	"log/slog"
 
 	"github.com/Vadym-H/GoDayLog/internal/config"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
-	"github.com/Vadym-H/GoDayLog/internal/services"
 )
 
 type userService interface {
@@ -29,18 +29,22 @@ type aiProcessor interface {
 }
 
 type statsGetter interface {
-	GetStats(ctx context.Context, q services.StatsQuery) (services.StatsReport, error)
+	GetStats(ctx context.Context, q domain.StatsQuery) (domain.StatsReport, error)
 }
 
 type statsAnalyser interface {
-	Analyse(ctx context.Context, q services.StatsQuery, report services.StatsReport, userContext string) (string, error)
+	Analyse(ctx context.Context, q domain.StatsQuery, report domain.StatsReport, userContext string) (string, error)
 }
 
 type activityLogService interface {
 	GetHistory(ctx context.Context, id domain.Identity, limit, offset int) ([]domain.ActivityLog, error)
-	GetMessageWithActivities(ctx context.Context, id domain.Identity, messageID string) (services.MessageWithActivities, error)
+	GetMessageWithActivities(ctx context.Context, id domain.Identity, messageID string) (domain.MessageWithActivities, error)
 	DeleteActivity(ctx context.Context, id domain.Identity, activityID string) error
 	UpdateActivity(ctx context.Context, id domain.Identity, activityID string, fields domain.UpdateActivityFields) (domain.ActivityLog, error)
+}
+
+type transcriptionService interface {
+	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64, mimeType string) (string, error)
 }
 
 type Handlers struct {
@@ -52,6 +56,7 @@ type Handlers struct {
 	statsSvc      statsGetter
 	statsAnalyser statsAnalyser
 	activitySvc   activityLogService
+	transcribe    transcriptionService
 }
 
 func New(
@@ -63,6 +68,7 @@ func New(
 	statsSvc statsGetter,
 	analyser statsAnalyser,
 	activitySvc activityLogService,
+	transcribe transcriptionService,
 ) *Handlers {
 	return &Handlers{
 		log:           log,
@@ -73,5 +79,6 @@ func New(
 		statsSvc:      statsSvc,
 		statsAnalyser: analyser,
 		activitySvc:   activitySvc,
+		transcribe:    transcribe,
 	}
 }

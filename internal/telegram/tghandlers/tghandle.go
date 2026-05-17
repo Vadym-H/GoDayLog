@@ -2,12 +2,13 @@ package tghandlers
 
 import (
 	"context"
+	"io"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
-	"github.com/Vadym-H/GoDayLog/internal/services"
 )
 
 type userService interface {
@@ -24,11 +25,11 @@ type timezoneLookup interface {
 }
 
 type statsService interface {
-	GetStats(ctx context.Context, q services.StatsQuery) (services.StatsReport, error)
+	GetStats(ctx context.Context, q domain.StatsQuery) (domain.StatsReport, error)
 }
 
 type statsAnalyser interface {
-	Analyse(ctx context.Context, q services.StatsQuery, report services.StatsReport, userContext string) (string, error)
+	Analyse(ctx context.Context, q domain.StatsQuery, report domain.StatsReport, userContext string) (string, error)
 }
 
 type pendingStatsState struct {
@@ -36,7 +37,7 @@ type pendingStatsState struct {
 	to     time.Time
 	loc    *time.Location
 	tzName string
-	report services.StatsReport
+	report domain.StatsReport
 }
 
 type messageService interface {
@@ -47,6 +48,10 @@ type messageAIProcessor interface {
 	ExtractActivities(ctx context.Context, id domain.Identity, messageID, text string) ([]domain.Activity, error)
 	SaveActivities(ctx context.Context, id domain.Identity, messageID string, activities []domain.Activity) error
 	CancelReview(ctx context.Context, id domain.Identity, messageID string) error
+}
+
+type transcriptionService interface {
+	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64, mimeType string) (string, error)
 }
 
 // pendingReview holds the in-progress AI review state for one chat.
@@ -67,6 +72,9 @@ type TgHandlers struct {
 	statsService   statsService
 	statsAnalyser  statsAnalyser
 	tzFinder       timezoneLookup
+	transcribe      transcriptionService
+	maxAudioBytes   int64
+	downloadClient  *http.Client
 
 	pendingMu          sync.RWMutex
 	pendingLog         map[int64]struct{}
@@ -80,7 +88,7 @@ type TgHandlers struct {
 	pendingStats       map[int64]*pendingStatsState
 }
 
-func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService, analyser statsAnalyser, tzFinder timezoneLookup) *TgHandlers {
+func New(log *slog.Logger, userService userService, messageService messageService, aiProcessor messageAIProcessor, statsService statsService, analyser statsAnalyser, tzFinder timezoneLookup, transcribe transcriptionService, maxAudioBytes int64) *TgHandlers {
 	return &TgHandlers{
 		log:                log,
 		userService:        userService,
@@ -89,6 +97,9 @@ func New(log *slog.Logger, userService userService, messageService messageServic
 		statsService:       statsService,
 		statsAnalyser:      analyser,
 		tzFinder:           tzFinder,
+		transcribe:         transcribe,
+		maxAudioBytes:      maxAudioBytes,
+		downloadClient:     &http.Client{Timeout: 30 * time.Second},
 		pendingLog:         make(map[int64]struct{}),
 		pendingLlmCtx:      make(map[int64]struct{}),
 		pendingReview:      make(map[int64]*pendingReview),
