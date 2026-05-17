@@ -66,3 +66,33 @@ func (r *AIRequestLogRepo) CreateStatsAILog(ctx context.Context, userID, model s
 
 	return nil
 }
+
+func (r *AIRequestLogRepo) CreateTranscriptionLog(ctx context.Context, userID, model string, audioSeconds int) error {
+	const op = "storage.postgres.CreateTranscriptionLog"
+
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO ai_request_logs (user_id, message_id, prompt_tokens, completion_tokens, total_tokens, model, request_type, audio_seconds)
+		VALUES ($1, NULL, 0, 0, 0, $2, 'transcription', $3)
+	`, userID, model, audioSeconds)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	return nil
+}
+
+func (r *AIRequestLogRepo) SumAudioSecondsSince(ctx context.Context, userID string, since time.Time) (int, error) {
+	const op = "storage.postgres.SumAudioSecondsSince"
+
+	var total int
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(audio_seconds), 0)
+		FROM ai_request_logs
+		WHERE user_id = $1 AND request_type = 'transcription' AND created_at >= $2
+	`, userID, since).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return total, nil
+}
