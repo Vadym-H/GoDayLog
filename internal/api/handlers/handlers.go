@@ -44,7 +44,7 @@ type activityLogService interface {
 }
 
 type transcriptionService interface {
-	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64) (string, error)
+	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64, mimeType string) (string, error)
 }
 
 type Handlers struct {

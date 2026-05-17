@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -50,7 +51,7 @@ type messageAIProcessor interface {
 }
 
 type transcriptionService interface {
-	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64) (string, error)
+	Transcribe(ctx context.Context, id domain.Identity, audio io.Reader, sizeBytes int64, mimeType string) (string, error)
 }
 
 // pendingReview holds the in-progress AI review state for one chat.
@@ -71,8 +72,9 @@ type TgHandlers struct {
 	statsService   statsService
 	statsAnalyser  statsAnalyser
 	tzFinder       timezoneLookup
-	transcribe     transcriptionService
-	maxAudioBytes  int64
+	transcribe      transcriptionService
+	maxAudioBytes   int64
+	downloadClient  *http.Client
 
 	pendingMu          sync.RWMutex
 	pendingLog         map[int64]struct{}
@@ -97,6 +99,7 @@ func New(log *slog.Logger, userService userService, messageService messageServic
 		tzFinder:           tzFinder,
 		transcribe:         transcribe,
 		maxAudioBytes:      maxAudioBytes,
+		downloadClient:     &http.Client{Timeout: 30 * time.Second},
 		pendingLog:         make(map[int64]struct{}),
 		pendingLlmCtx:      make(map[int64]struct{}),
 		pendingReview:      make(map[int64]*pendingReview),

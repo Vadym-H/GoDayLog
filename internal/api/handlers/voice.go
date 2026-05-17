@@ -35,7 +35,7 @@ func (h *Handlers) SubmitVoiceLog(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	text, err := h.transcribe.Transcribe(r.Context(), id, file, header.Size)
+	text, err := h.transcribe.Transcribe(r.Context(), id, file, header.Size, header.Header.Get("Content-Type"))
 	if err != nil {
 		switch {
 		case errors.Is(err, ai.ErrAudioTooLarge):
