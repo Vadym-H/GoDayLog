@@ -9,7 +9,6 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/api/apicontext"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
-	"github.com/Vadym-H/GoDayLog/internal/services"
 )
 
 func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
@@ -83,11 +82,11 @@ func (h *Handlers) AnalyseStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"analysis": analysis})
 }
 
-func (h *Handlers) buildStatsQuery(r *http.Request, id domain.Identity) (services.StatsQuery, error) {
+func (h *Handlers) buildStatsQuery(r *http.Request, id domain.Identity) (domain.StatsQuery, error) {
 	fromStr := r.URL.Query().Get("from")
 	toStr := r.URL.Query().Get("to")
 	if fromStr == "" || toStr == "" {
-		return services.StatsQuery{}, fmt.Errorf("from and to query params are required (format: 2006-01-02)")
+		return domain.StatsQuery{}, fmt.Errorf("from and to query params are required (format: 2006-01-02)")
 	}
 
 	tz, err := h.userSvc.GetUserTimezone(r.Context(), id)
@@ -101,20 +100,20 @@ func (h *Handlers) buildStatsQuery(r *http.Request, id domain.Identity) (service
 
 	from, err := time.ParseInLocation("2006-01-02", fromStr, loc)
 	if err != nil {
-		return services.StatsQuery{}, fmt.Errorf("invalid from date, use format 2006-01-02")
+		return domain.StatsQuery{}, fmt.Errorf("invalid from date, use format 2006-01-02")
 	}
 	to, err := time.ParseInLocation("2006-01-02", toStr, loc)
 	if err != nil {
-		return services.StatsQuery{}, fmt.Errorf("invalid to date, use format 2006-01-02")
+		return domain.StatsQuery{}, fmt.Errorf("invalid to date, use format 2006-01-02")
 	}
 	to = to.AddDate(0, 0, 1) // next local midnight, end of day exclusive
 
 	userID, err := h.userSvc.GetUserID(r.Context(), id)
 	if err != nil {
-		return services.StatsQuery{}, fmt.Errorf("user not found")
+		return domain.StatsQuery{}, fmt.Errorf("user not found")
 	}
 
-	return services.StatsQuery{
+	return domain.StatsQuery{
 		UserID:   userID,
 		From:     from,
 		To:       to,

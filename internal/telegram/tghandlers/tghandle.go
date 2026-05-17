@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Vadym-H/GoDayLog/internal/domain"
-	"github.com/Vadym-H/GoDayLog/internal/services"
 )
 
 type userService interface {
@@ -24,11 +23,11 @@ type timezoneLookup interface {
 }
 
 type statsService interface {
-	GetStats(ctx context.Context, q services.StatsQuery) (services.StatsReport, error)
+	GetStats(ctx context.Context, q domain.StatsQuery) (domain.StatsReport, error)
 }
 
 type statsAnalyser interface {
-	Analyse(ctx context.Context, q services.StatsQuery, report services.StatsReport, userContext string) (string, error)
+	Analyse(ctx context.Context, q domain.StatsQuery, report domain.StatsReport, userContext string) (string, error)
 }
 
 type pendingStatsState struct {
@@ -36,7 +35,7 @@ type pendingStatsState struct {
 	to     time.Time
 	loc    *time.Location
 	tzName string
-	report services.StatsReport
+	report domain.StatsReport
 }
 
 type messageService interface {

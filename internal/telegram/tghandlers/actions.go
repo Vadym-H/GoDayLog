@@ -245,7 +245,7 @@ func (tg *TgHandlers) handleStatsRange(ctx context.Context, bot *tgbot.Bot, chat
 
 	from, to, label := rangeFunc(loc)
 
-	report, err := tg.statsService.GetStats(ctx, services.StatsQuery{
+	report, err := tg.statsService.GetStats(ctx, domain.StatsQuery{
 		UserID:   userID,
 		From:     from,
 		To:       to,

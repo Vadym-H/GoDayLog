@@ -26,11 +26,6 @@ type ActivityLogIDResolver interface {
 	GetUserID(ctx context.Context, id domain.Identity) (string, error)
 }
 
-type MessageWithActivities struct {
-	Message    domain.Message
-	Activities []domain.ActivityLog
-}
-
 type ActivityLogService struct {
 	log        *slog.Logger
 	logReader  ActivityLogReader
@@ -63,23 +58,23 @@ func (s *ActivityLogService) GetHistory(ctx context.Context, id domain.Identity,
 	return s.logReader.GetActivityLogs(ctx, userID, limit, offset)
 }
 
-func (s *ActivityLogService) GetMessageWithActivities(ctx context.Context, id domain.Identity, messageID string) (MessageWithActivities, error) {
+func (s *ActivityLogService) GetMessageWithActivities(ctx context.Context, id domain.Identity, messageID string) (domain.MessageWithActivities, error) {
 	userID, err := s.idResolver.GetUserID(ctx, id)
 	if err != nil {
-		return MessageWithActivities{}, err
+		return domain.MessageWithActivities{}, err
 	}
 
 	msg, err := s.msgReader.GetMessage(ctx, messageID, userID)
 	if err != nil {
-		return MessageWithActivities{}, err
+		return domain.MessageWithActivities{}, err
 	}
 
 	activities, err := s.logReader.GetActivityLogsByMessage(ctx, messageID, userID)
 	if err != nil {
-		return MessageWithActivities{}, err
+		return domain.MessageWithActivities{}, err
 	}
 
-	return MessageWithActivities{Message: msg, Activities: activities}, nil
+	return domain.MessageWithActivities{Message: msg, Activities: activities}, nil
 }
 
 func (s *ActivityLogService) DeleteActivity(ctx context.Context, id domain.Identity, activityID string) error {

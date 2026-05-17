@@ -21,3 +21,8 @@ type UpdateActivityFields struct {
 	DurationMinutes *int
 	StartedAt       *time.Time
 }
+
+type MessageWithActivities struct {
+	Message    Message
+	Activities []ActivityLog
+}
