@@ -15,6 +15,7 @@ llm:
   provider: "openai"
   api_key: ""   # set via env
   model: "gpt-5.4-mini"
+  whisper_model: "whisper-1"
   timeout: 30s
   limits:
     enabled: true                   # false in local.yaml, true in prod.yaml
@@ -22,12 +23,20 @@ llm:
     max_input_tokens_stats: 2000
     daily_budget_tokens: 5000
     max_context_chars: 700
+    max_audio_bytes: 10485760
+    daily_budget_audio_minutes: 0
   pro_limits:
     max_input_tokens_activities: 10000
     max_input_tokens_stats: 160000
     daily_budget_tokens: 500000
     max_context_chars: 2000
+    max_audio_bytes: 10485760
+    daily_budget_audio_minutes: 0
 server:
   address: ":8080"
   timeout: 4s
   idle_timeout: 120s
+
+jwt:
+  secret: ""   # set via JWT_SECRET env var
+  expiry_hours: 72

@@ -12,7 +12,6 @@ import (
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
-	"github.com/Vadym-H/GoDayLog/internal/services"
 	"github.com/Vadym-H/GoDayLog/internal/stats"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -67,7 +66,7 @@ func (tg *TgHandlers) sendStatsPicker(ctx context.Context, bot *tgbot.Bot, chatI
 	return err
 }
 
-func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chatID int64, report services.StatsReport, rangeLabel string, loc *time.Location) error {
+func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chatID int64, report domain.StatsReport, rangeLabel string, loc *time.Location) error {
 	var sb strings.Builder
 	sb.WriteString(rangeLabel)
 	sb.WriteString("\n\n")
@@ -103,7 +102,7 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 
 		// type rows — always show all 4 types
 		typeOrder := []string{"growth", "routine", "rest", "drain"}
-		typeMap := make(map[string]services.TypeSummary, 4)
+		typeMap := make(map[string]domain.TypeSummary, 4)
 		for _, ts := range report.ByType {
 			typeMap[ts.Type] = ts
 		}
@@ -152,7 +151,7 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 				type weekBucket struct {
 					monday time.Time
 					sunday time.Time
-					byType map[string]services.TypeSummary
+					byType map[string]domain.TypeSummary
 				}
 				var weekOrder []time.Time
 				weekMap := make(map[time.Time]*weekBucket)
@@ -168,7 +167,7 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 						wb = &weekBucket{
 							monday: monday,
 							sunday: monday.AddDate(0, 0, 6),
-							byType: make(map[string]services.TypeSummary),
+							byType: make(map[string]domain.TypeSummary),
 						}
 						weekMap[monday] = wb
 						weekOrder = append(weekOrder, monday)
@@ -190,12 +189,12 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 					} else {
 						dateLabel = fmt.Sprintf("%d %s–%d %s", monday.Day(), monday.Format("Jan"), wb.sunday.Day(), wb.sunday.Format("Jan"))
 					}
-					typeSummaries := make([]services.TypeSummary, 0, len(wb.byType))
+					typeSummaries := make([]domain.TypeSummary, 0, len(wb.byType))
 					for _, ts := range wb.byType {
 						typeSummaries = append(typeSummaries, ts)
 					}
 					sb.WriteString("\n")
-					sb.WriteString(fmt.Sprintf("%-14s  %s", dateLabel, formatDayLine(services.DaySummary{ByType: typeSummaries})))
+					sb.WriteString(fmt.Sprintf("%-14s  %s", dateLabel, formatDayLine(domain.DaySummary{ByType: typeSummaries})))
 				}
 			} else {
 				// daily: iterate ByDay directly — DB only returns days with activities
@@ -207,20 +206,25 @@ func (tg *TgHandlers) sendStatsMessage(ctx context.Context, bot *tgbot.Bot, chat
 		}
 	}
 
-	markup := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Log activity", CallbackData: callbackLogActivity},
-				{Text: "Change range", CallbackData: callbackStatsPicker},
-			},
-			{
-				{Text: "Analyse with AI", CallbackData: callbackStatsAnalyse},
-			},
-			{
-				{Text: "Home", CallbackData: callbackHome},
-			},
+	// "Analyse with AI" makes no sense (and wastes the user's daily token
+	// budget) when the range has no activities — only offer it when there is
+	// something to analyse.
+	rows := [][]models.InlineKeyboardButton{
+		{
+			{Text: "Log activity", CallbackData: callbackLogActivity},
+			{Text: "Change range", CallbackData: callbackStatsPicker},
 		},
 	}
+	if report.TotalCount > 0 {
+		rows = append(rows, []models.InlineKeyboardButton{
+			{Text: "Analyse with AI", CallbackData: callbackStatsAnalyse},
+		})
+	}
+	rows = append(rows, []models.InlineKeyboardButton{
+		{Text: "Home", CallbackData: callbackHome},
+	})
+
+	markup := &models.InlineKeyboardMarkup{InlineKeyboard: rows}
 
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID:      chatID,
@@ -293,7 +297,7 @@ func (tg *TgHandlers) HandlePendingStatsRangeInput(ctx context.Context, bot *tgb
 		return true
 	}
 
-	report, err := tg.statsService.GetStats(ctx, services.StatsQuery{
+	report, err := tg.statsService.GetStats(ctx, domain.StatsQuery{
 		UserID:   userID,
 		From:     from,
 		To:       to,
@@ -317,6 +321,16 @@ func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, ch
 		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "No stats loaded. Please select a range first.",
+		})
+		return err
+	}
+
+	// Guard against an old stats message that still shows the button after
+	// this fix shipped — refuse to send an empty report to the LLM.
+	if ps.report.TotalCount == 0 {
+		_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Nothing to analyse in this range — no activities logged.",
 		})
 		return err
 	}
@@ -348,7 +362,7 @@ func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, ch
 		return err
 	}
 
-	analysis, err := tg.statsAnalyser.Analyse(ctx, services.StatsQuery{
+	analysis, err := tg.statsAnalyser.Analyse(ctx, domain.StatsQuery{
 		UserID:   userID,
 		From:     ps.from,
 		To:       ps.to,
@@ -380,9 +394,9 @@ func (tg *TgHandlers) handleStatsAnalyse(ctx context.Context, bot *tgbot.Bot, ch
 }
 
 // formatDayLine renders the per-type breakdown for one day, e.g. "growth 45min · drain 1h".
-func formatDayLine(ds services.DaySummary) string {
+func formatDayLine(ds domain.DaySummary) string {
 	order := []string{"growth", "routine", "rest", "drain"}
-	typeMap := make(map[string]services.TypeSummary, len(ds.ByType))
+	typeMap := make(map[string]domain.TypeSummary, len(ds.ByType))
 	for _, ts := range ds.ByType {
 		typeMap[ts.Type] = ts
 	}

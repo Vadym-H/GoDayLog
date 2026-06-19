@@ -47,10 +47,11 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 	aiProcessor := services.NewMessageAIProcessor(log, limiter, messageRepo, userRepo, activityLogRepo, aiRequestLogRepo, limits, proLimits)
 	statsService := services.NewStatsService(log, statsRepo)
 	statsAnalyser := services.NewStatsAnalyser(log, statsAnalysisRepo, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
+	transcriptionSvc := services.NewTranscriptionService(log, aiClient, aiRequestLogRepo, userRepo, limits, proLimits)
 
 	b := &Bot{
 		log:          log,
-		tgHandlers:   tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder),
+		tgHandlers:   tghandlers.New(log, userService, messageService, aiProcessor, statsService, statsAnalyser, tzFinder, transcriptionSvc, int64(limits.MaxAudioBytes)),
 		staleCleaner: messageRepo,
 	}
 
@@ -83,32 +84,10 @@ func New(token string, log *slog.Logger, db *storage.Storage, aiClient *ai.Clien
 }
 
 func (b *Bot) Start(ctx context.Context) {
-	go b.runStaleCleaner(ctx)
+	go services.RunStaleCleaner(ctx, b.log, b.staleCleaner)
 	b.log.Info("telegram bot started")
 	b.tg.Start(ctx)
 	b.log.Info("telegram bot stopped")
-}
-
-func (b *Bot) runStaleCleaner(ctx context.Context) {
-	const staleness = 10 * time.Minute
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	b.cleanStale(ctx, staleness)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			b.cleanStale(ctx, staleness)
-		}
-	}
-}
-
-func (b *Bot) cleanStale(ctx context.Context, staleness time.Duration) {
-	if err := b.staleCleaner.MarkStalePendingMessagesFailed(ctx, time.Now().Add(-staleness)); err != nil {
-		b.log.Warn("stale pending cleaner error", slog.Any("error", err))
-	}
 }
 
 // withRequestID stamps a fresh request ID onto ctx before dispatching to any handler.
@@ -130,6 +109,10 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 		return
 	}
 
+	if b.tgHandlers.HandlePendingVoiceContextInput(ctx, bot, update) {
+		return
+	}
+
 	if b.tgHandlers.HandlePendingContextInput(ctx, bot, update) {
 		return
 	}
@@ -143,6 +126,10 @@ func (b *Bot) handleMessage(ctx context.Context, bot *tgbot.Bot, update *models.
 	}
 
 	if b.tgHandlers.HandlePendingTagInput(ctx, bot, update) {
+		return
+	}
+
+	if b.tgHandlers.HandlePendingVoiceLogInput(ctx, bot, update) {
 		return
 	}
 

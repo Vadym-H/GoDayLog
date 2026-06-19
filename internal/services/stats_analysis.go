@@ -9,6 +9,7 @@ import (
 
 	"github.com/Vadym-H/GoDayLog/internal/ai"
 	"github.com/Vadym-H/GoDayLog/internal/config"
+	"github.com/Vadym-H/GoDayLog/internal/domain"
 	"github.com/Vadym-H/GoDayLog/internal/logger"
 )
 
@@ -21,7 +22,7 @@ type ActivityEntry struct {
 }
 
 type ActivityEntryRepository interface {
-	GetActivityEntries(ctx context.Context, q StatsQuery) ([]ActivityEntry, error)
+	GetActivityEntries(ctx context.Context, q domain.StatsQuery) ([]ActivityEntry, error)
 }
 
 type AIAnalysisClient interface {
@@ -51,7 +52,7 @@ func NewStatsAnalyser(log *slog.Logger, repo ActivityEntryRepository, aiClient A
 	return &StatsAnalyser{log: log, repo: repo, ai: aiClient, aiLogRepo: aiLogRepo, planReader: planReader, limits: limits, proLimits: proLimits}
 }
 
-func (a *StatsAnalyser) Analyse(ctx context.Context, q StatsQuery, report StatsReport, userContext string) (string, error) {
+func (a *StatsAnalyser) Analyse(ctx context.Context, q domain.StatsQuery, report domain.StatsReport, userContext string) (string, error) {
 	log := logger.From(ctx, a.log)
 
 	entries, err := a.repo.GetActivityEntries(ctx, q)
@@ -111,7 +112,7 @@ func (a *StatsAnalyser) Analyse(ctx context.Context, q StatsQuery, report StatsR
 	return result.Text, nil
 }
 
-func buildAnalysisPrompt(q StatsQuery, report StatsReport, entries []ActivityEntry, userContext string) string {
+func buildAnalysisPrompt(q domain.StatsQuery, report domain.StatsReport, entries []ActivityEntry, userContext string) string {
 	var sb strings.Builder
 
 	loc := time.UTC
@@ -136,7 +137,7 @@ func buildAnalysisPrompt(q StatsQuery, report StatsReport, entries []ActivityEnt
 	sb.WriteString("\n\nBy type:\n")
 
 	typeOrder := []string{"growth", "routine", "rest", "drain"}
-	typeMap := make(map[string]TypeSummary, 4)
+	typeMap := make(map[string]domain.TypeSummary, 4)
 	for _, ts := range report.ByType {
 		typeMap[ts.Type] = ts
 	}

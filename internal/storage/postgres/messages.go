@@ -66,7 +66,7 @@ func (r *MessageRepo) SaveMessage(ctx context.Context, id domain.Identity, exter
 	return messageID, nil
 }
 
-func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, status, statusError string) error {
+func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, userID, status, statusError string) error {
 	const op = "storage.postgres.UpdateMessageStatus"
 
 	if _, ok := allowedMessageStatuses[status]; !ok {
@@ -84,10 +84,10 @@ func (r *MessageRepo) UpdateMessageStatus(ctx context.Context, messageID, status
 
 	cmdTag, err := r.db.Exec(ctx, `
 		UPDATE messages
-		SET status = $2,
-		    error = $3
-		WHERE id = $1
-	`, messageID, status, dbErr)
+		SET status = $3,
+		    error = $4
+		WHERE id = $1 AND user_id = $2
+	`, messageID, userID, status, dbErr)
 	if err != nil {
 		return fmt.Errorf("%s: update status: %w", op, err)
 	}
@@ -113,6 +113,25 @@ func (r *MessageRepo) MarkStalePendingMessagesFailed(ctx context.Context, cutoff
 	}
 
 	return nil
+}
+
+func (r *MessageRepo) GetMessage(ctx context.Context, messageID, userID string) (domain.Message, error) {
+	const op = "storage.postgres.GetMessage"
+
+	var m domain.Message
+	err := r.db.QueryRow(ctx, `
+		SELECT id, text, status, created_at
+		FROM messages
+		WHERE id = $1 AND user_id = $2
+	`, messageID, userID).Scan(&m.ID, &m.Text, &m.Status, &m.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Message{}, fmt.Errorf("%s: %w", op, storage.ErrMessageNotFound)
+		}
+		return domain.Message{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return m, nil
 }
 
 func (r *MessageRepo) DeleteMessage(ctx context.Context, messageID string) error {

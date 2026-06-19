@@ -9,6 +9,7 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o app ./cmd/app
+RUN CGO_ENABLED=0 GOOS=linux go build -o api ./cmd/api
 
 
 # -------- FINAL STAGE --------
@@ -16,10 +17,8 @@ FROM alpine:3.19
 
 WORKDIR /app
 
-# copy binary
 COPY --from=builder /app/app .
-
-# copy config (если нужен yaml)
+COPY --from=builder /app/api .
 COPY config ./config
 
 CMD ["./app"]

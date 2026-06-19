@@ -23,7 +23,7 @@ func cancelLogMarkup() *models.InlineKeyboardMarkup {
 func (tg *TgHandlers) sendLogPrompt(ctx context.Context, bot *tgbot.Bot, chatID int64) error {
 	_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID: chatID,
-		Text: "Please describe what you did today.\n\n" +
+		Text: "Please describe what you did today — type it or send a voice message.\n\n" +
 			"You can include an activity type to help the AI:\n" +
 			"• growth — learning, working toward goals\n" +
 			"• routine — chores, errands, cooking\n" +
@@ -77,7 +77,7 @@ func (tg *TgHandlers) sendHelp(ctx context.Context, bot *tgbot.Bot, chatID int64
 			"/stats — open the stats menu\n" +
 			"/start — go back to the home screen\n\n" +
 			"Logging:\n" +
-			"Write naturally: \"worked on the project for 2 hours, then went for a run, watched Netflix\". The AI splits this into individual activities, assigns a type and duration, and asks you to confirm before saving anything.\n\n" +
+			"Write naturally or send a voice message: \"worked on the project for 2 hours, then went for a run, watched Netflix\". The AI splits this into individual activities, assigns a type and duration, and asks you to confirm before saving anything.\n\n" +
 			"Activity types:\n" +
 			"• growth — working toward your goals\n" +
 			"• routine — necessary daily tasks\n" +
@@ -101,7 +101,8 @@ func (tg *TgHandlers) sendContextPrompt(ctx context.Context, bot *tgbot.Bot, cha
 	}
 
 	text := "To personalize activity insights, please share a short context about you: your routine, priorities, and what feels useful (for example: work focus, fitness, study, family, or wellbeing)." +
-		"\n\nA few lines are enough. This helps the AI better understand which activities matter for you most."
+		"\n\nA few lines are enough. This helps the AI better understand which activities matter for you most." +
+		"\n\nYou can type it or send a voice message."
 
 	if currentContext != "" {
 		text += "\n\nYour current context: " + currentContext
